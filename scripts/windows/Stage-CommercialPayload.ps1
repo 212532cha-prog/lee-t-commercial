@@ -17,7 +17,7 @@ $server=Join-Path $postgres 'bin\postgres.exe'
 foreach($path in @($node,$npm,$server,(Join-Path $postgres 'bin\initdb.exe'),(Join-Path $postgres 'bin\pg_ctl.exe'),(Join-Path $postgres 'bin\psql.exe'))){
  if(-not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'A required vendor runtime file is missing.'}
 }
-$nodeVersion=& $node -p 'process.platform+":"+process.arch+":"+process.versions.node'
+$nodeVersion=& $node -p "process.platform+':'+process.arch+':'+process.versions.node"
 if($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^win32:x64:24\.'){throw 'The installer payload requires Windows x64 Node.js 24.'}
 $pgVersion=& $server --version
 if($LASTEXITCODE -ne 0 -or $pgVersion -notmatch '^postgres \(PostgreSQL\) 17\.'){throw 'The installer payload requires PostgreSQL 17.'}
