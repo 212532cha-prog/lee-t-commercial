@@ -1,8 +1,12 @@
 import {readFile} from 'node:fs/promises';
-const allowed=new Set(['DATABASE_URL','PUBLIC_ORIGIN','TUNNEL_PUBLIC_ORIGIN','DATA_DIR','APP_PORT','APP_BIND','TLS_CERT_PATH','TLS_KEY_PATH','TLS_PFX_PATH','TLS_PFX_PASSPHRASE']);
-export async function loadSettings(environment=process.env){
+const allowed=new Set(['DATABASE_URL','PUBLIC_ORIGIN','TUNNEL_PUBLIC_ORIGIN','DATA_DIR','APP_PORT','APP_BIND','TLS_CERT_PATH','TLS_KEY_PATH','TLS_PFX_PATH','TLS_PFX_PASSPHRASE','LEE_T_LICENSE_DIR','LEE_T_ISSUER_PUBLIC_KEY_PATH','LEE_T_ISSUER_KEY_ID']);
+export async function readSettings(environment=process.env){
  const settings={...environment};
  if(environment.WAREHOUSE_CONFIG_PATH){const config=JSON.parse(await readFile(environment.WAREHOUSE_CONFIG_PATH,'utf8'));if(!config.Environment||typeof config.Environment!=='object'||Array.isArray(config.Environment))throw Error('INVALID_SERVER_CONFIGURATION');for(const [key,value]of Object.entries(config.Environment)){if(!allowed.has(key)||typeof value!=='string')throw Error('INVALID_SERVER_CONFIGURATION');if(settings[key]===undefined)settings[key]=value;}}
+ return settings;
+}
+export async function loadSettings(environment=process.env){
+ const settings=await readSettings(environment);
  if(!settings.DATABASE_URL||!settings.PUBLIC_ORIGIN)throw Error('DATABASE_URL_AND_PUBLIC_ORIGIN_REQUIRED');
  const origin=new URL(settings.PUBLIC_ORIGIN);if(origin.protocol!=='https:'||origin.origin!==settings.PUBLIC_ORIGIN)throw Error('PUBLIC_ORIGIN_REQUIRES_HTTPS');
  if(settings.TUNNEL_PUBLIC_ORIGIN){

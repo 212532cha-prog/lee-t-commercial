@@ -38,3 +38,29 @@
 - Real Windows 11 install/restore test; Android and iOS LAN pairing, revocation, camera scan and OS permission tests.
 - Backup/recovery, rollback, HTTPS certificate, router isolation and security abuse tests.
 - Do not label the product sellable or fully accepted until every gate is passed and production key management is in place.
+
+## Offline server activation development entry point
+
+Use a protected server configuration, with an absolute `LEE_T_LICENSE_DIR` outside
+the business data directory and the issuer's trusted public key in
+`LEE_T_ISSUER_PUBLIC_KEY_PATH`. Set `LEE_T_ISSUER_KEY_ID` to the issuer key ID.
+Keep this directory and the trust configuration writable only by the installing
+administrator or service identity, as appropriate. The installer still needs
+to provision and verify the Windows ACLs and to select the commercial entry
+point.
+
+1. On the Windows server, run `node scripts/lee-t-license.mjs request` to
+   generate a request JSON with hashed hardware claims. The installation ID
+   remains stable on repeated requests.
+2. Obtain the signed license for that request from the issuer. The issuer's
+   private key stays on the issuer side.
+3. Run `node scripts/lee-t-license.mjs install <signed-license.json>`.
+   Import verifies the signature, device and running version before replacing
+   the local license.
+4. Run `npm run start:commercial`. The server checks the license before
+   opening the database or listening. The original internal Warehouse uses
+   its existing `npm start` entry point.
+
+Windows hardware collection and the service account's access to hardware IDs
+still require target-machine verification. Online activation and production
+issuer deployment remain separate milestones.

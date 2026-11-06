@@ -18,9 +18,14 @@ import {DashboardService} from '../src/dashboard/service.mjs';
 import {ProfileService} from '../src/profile/service.mjs';
 import {ExportService} from '../src/export/service.mjs';
 import {createApplicationRoutes} from '../src/dashboard/routes.mjs';
+import {requireLocalLicense} from '../src/commercial/server-license.mjs';
 let pool,lease;
 try{
- const settings=await loadSettings(),listener=await transport(settings);if(listener.tls)createSecureContext(listener.tls);
+ const settings=await loadSettings();
+ if(process.argv.includes('--commercial')){
+  try{await requireLocalLicense(settings);}catch{throw Error('LEE_T_ACTIVATION_REQUIRED');}
+ }
+ const listener=await transport(settings);if(listener.tls)createSecureContext(listener.tls);
  if(process.argv.includes('--check-config'))console.log('Protected configuration and TLS material validated; database and device acceptance not executed.');
  else{
   pool=createPool(settings.DATABASE_URL);lease=await pool.connect();const lock=(await lease.query("SELECT pg_try_advisory_lock(hashtextextended(current_database()||'.'||current_schema()||':warehouse-app',0)) AS acquired")).rows[0];if(!lock.acquired)throw Error('ANOTHER_INSTANCE_IS_RUNNING');
@@ -40,4 +45,11 @@ try{
   server.listen(listener.port,listener.bind,()=>{console.log('Warehouse ready. '+(listener.tls?'Direct HTTPS listener active.':'Loopback HTTP listener requires the trusted HTTPS reverse proxy.'));maintain(()=>backup.scheduled());});
   server.on('error',()=>{console.error('Warehouse listener failed.');stop().catch(()=>{process.exitCode=1;});process.exitCode=1;});
  }
-}catch(error){console.error(error.message==='ANOTHER_INSTANCE_IS_RUNNING'?'Startup refused: this database already has a running warehouse instance.':'Startup failed: check protected database/origin/TLS/bootstrap configuration and verified recovery state. No demo fallback.');if(lease)lease.release();if(pool)await pool.end();process.exitCode=1;}
+}catch(error){
+ if(error.message==='ANOTHER_INSTANCE_IS_RUNNING')console.error('Startup refused: this database already has a running warehouse instance.');
+ else if(error.message==='LEE_T_ACTIVATION_REQUIRED')console.error('Lee T commercial startup requires a valid license for this installation and version.');
+ else console.error('Startup failed: check protected database/origin/TLS/bootstrap configuration and verified recovery state. No demo fallback.');
+ if(lease)lease.release();
+ if(pool)await pool.end();
+ process.exitCode=1;
+}
