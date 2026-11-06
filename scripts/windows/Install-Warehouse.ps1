@@ -1,6 +1,6 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
-param([string]$AppRoot=([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))),[string]$DataDir,[string]$BackupPath1,[string]$BackupPath2,[string]$Address,[int]$Port=3443,[string]$PostgresService,[switch]$NoStart,[string]$BundledNodePath,[switch]$OfflineDependencies,[switch]$Commercial,[string]$LicenseDir,[string]$IssuerPublicKeyPath,[string]$IssuerKeyId,[string]$BundledPostgresDirectory,[string]$DatabaseClusterRoot)
+param([string]$AppRoot=([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))),[string]$DataDir,[string]$BackupPath1,[string]$BackupPath2,[string]$Address,[int]$Port=3443,[string]$PostgresService,[switch]$NoStart,[string]$BundledNodePath,[switch]$OfflineDependencies,[switch]$Commercial,[string]$LicenseDir,[string]$IssuerPublicKeyPath,[string]$IssuerKeyId,[string]$BundledPostgresDirectory,[string]$DatabaseClusterRoot,[string]$HttpsHostname,[string]$HttpsPfxPath)
 $ErrorActionPreference='Stop'
 function Read-PlainSecret([string]$Prompt) { $secure=Read-Host $Prompt -AsSecureString;$pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure);try{return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)}finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)} }
 function Protect-Directory([string]$Path,[string]$ServiceAccess) { New-Item -ItemType Directory -Path $Path -Force | Out-Null;& icacls.exe $Path '/inheritance:r' '/grant:r' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' ('*S-1-5-19:(OI)(CI)'+$ServiceAccess) '/C' | Out-Null;if($LASTEXITCODE -ne 0){throw 'Cannot apply required NTFS permissions.'} }
@@ -54,6 +54,14 @@ if($Commercial){
 }
 $nodeVersion=[version]((& $node -p 'process.versions.node').Trim())
 if(-not (($nodeVersion.Major -eq 22 -and $nodeVersion.Minor -ge 17) -or $nodeVersion.Major -ge 24)){throw 'Install Node.js 24 LTS (or supported Node 22) first.'}
+if(([bool]$HttpsHostname) -ne ([bool]$HttpsPfxPath)){throw 'Provide both the warehouse HTTPS hostname and its PFX file.'}
+if($HttpsHostname){
+ if($HttpsHostname -notmatch '^[a-zA-Z0-9.-]+$' -or -not [IO.Path]::IsPathRooted($HttpsPfxPath) -or -not (Test-Path -LiteralPath $HttpsPfxPath -PathType Leaf)){throw 'Provide a DNS hostname and an absolute PFX file path.'}
+ $httpsPassphrase=Read-PlainSecret 'Warehouse HTTPS PFX password'
+ $verifyArgs=@((Join-Path $AppRoot 'scripts\verify-lan-https.mjs'),$HttpsHostname,$Address,$HttpsPfxPath)
+ [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($httpsPassphrase)) | & $node @verifyArgs
+ if($LASTEXITCODE -ne 0){throw 'Warehouse HTTPS certificate preflight failed.'}
+}
 Protect-Directory $DataDir 'M'
 $configPath=Join-Path $DataDir 'service.private.json'
 if(Test-Path $configPath){throw 'Protected configuration already exists. Do not overwrite existing installation data.'}
@@ -73,8 +81,17 @@ try{
  }else{
   $databaseUrl=Read-PlainSecret 'Dedicated local PostgreSQL connection URL (not the database administrator account)'
  }
-$certificate=& (Join-Path $PSScriptRoot 'New-LanCertificate.ps1') -Address $Address -Directory (Join-Path $DataDir 'tls') -TrustLocally
-$origin='https://'+$Address+':'+$Port
+$tlsDirectory=Join-Path $DataDir 'tls'
+if($HttpsHostname){
+ Protect-Directory $tlsDirectory 'RX'
+ $installedPfx=Join-Path $tlsDirectory 'server.pfx'
+ Copy-Item -LiteralPath $HttpsPfxPath -Destination $installedPfx
+ $certificate=@{PfxPath=$installedPfx;Passphrase=$httpsPassphrase}
+ $origin='https://'+$HttpsHostname.ToLowerInvariant()+':'+$Port
+}else{
+ $certificate=& (Join-Path $PSScriptRoot 'New-LanCertificate.ps1') -Address $Address -Directory $tlsDirectory -TrustLocally
+ $origin='https://'+$Address+':'+$Port
+}
 $config=@{ServiceName=$serviceName;AppRoot=$AppRoot;NodePath=$node;Environment=@{DATABASE_URL=$databaseUrl;PUBLIC_ORIGIN=$origin;DATA_DIR=$DataDir;APP_PORT=[string]$Port;APP_BIND='0.0.0.0';TLS_PFX_PATH=$certificate.PfxPath;TLS_PFX_PASSPHRASE=$certificate.Passphrase}}
 if($Commercial){
  $activation=Join-Path $AppRoot 'activation'
@@ -110,7 +127,7 @@ if($LASTEXITCODE -ne 0){throw 'Service recovery configuration failed.'}
 New-NetFirewallRule -DisplayName ($displayName+' LAN HTTPS') -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Program $node -Profile Private -InterfaceAlias $adapter.InterfaceAlias -RemoteAddress LocalSubnet | Out-Null
 if(-not $NoStart){Start-Service $serviceName}
 Write-Output ('Installed service. LAN address: '+$origin)
-Write-Output ('Install and trust this public root certificate on each phone: '+$certificate.RootCertificate)
+if($certificate.RootCertificate){Write-Output ('Install and trust this test root certificate on each phone: '+$certificate.RootCertificate)}
 Write-Output 'Phone/HID, actual shutdown/reboot, external storage and new-computer restore still require the acceptance checklist. Do not open router/public ports.'
 
 }catch{

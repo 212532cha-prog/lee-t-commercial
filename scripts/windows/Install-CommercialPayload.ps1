@@ -6,7 +6,9 @@ param(
  [Parameter(Mandatory=$true)][string]$IssuerPublicKey,
  [Parameter(Mandatory=$true)][string]$IssuerKeyId,
  [string]$DataRoot=(Join-Path $env:ProgramData 'Lee T Commercial'),
- [string]$Address
+ [string]$Address,
+ [string]$HttpsHostname,
+ [string]$HttpsPfxPath
 )
 $ErrorActionPreference='Stop'
 $payload=(Resolve-Path -LiteralPath $PayloadDirectory).Path
@@ -29,6 +31,6 @@ if(-not $Address){
 }
 & $installer -Commercial -OfflineDependencies -AppRoot $app -BundledNodePath $node `
  -BundledPostgresDirectory $postgres -DatabaseClusterRoot (Join-Path $root 'postgresql') `
- -DataDir (Join-Path $root 'data') -Address $Address `
+ -DataDir (Join-Path $root 'data') -Address $Address -HttpsHostname $HttpsHostname -HttpsPfxPath $HttpsPfxPath `
  -LicenseDir (Resolve-Path -LiteralPath $LicenseDirectory).Path `
  -IssuerPublicKeyPath (Resolve-Path -LiteralPath $IssuerPublicKey).Path -IssuerKeyId $IssuerKeyId

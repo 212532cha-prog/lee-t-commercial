@@ -28,6 +28,7 @@ var
   LicensePage: TInputDirWizardPage;
   KeyPage: TInputFileWizardPage;
   OptionsPage: TInputQueryWizardPage;
+  HttpsPage: TInputFileWizardPage;
   ProvisionResult: Integer;
 
 procedure InitializeWizard;
@@ -47,6 +48,11 @@ begin
   OptionsPage.Add('Issuer key ID', False);
   OptionsPage.Values[0] := 'leet-test-20261106';
   OptionsPage.Add('Warehouse IPv4 address (optional)', False);
+  OptionsPage.Add('Warehouse HTTPS hostname (optional)', False);
+  HttpsPage := CreateInputFilePage(OptionsPage.ID, 'Warehouse HTTPS certificate',
+    'Select a publicly trusted PFX for the warehouse hostname.',
+    'Leave this empty for a test installation that uses a local CA.');
+  HttpsPage.Add('Warehouse PFX (optional)', 'PKCS #12 (*.pfx;*.p12)|*.pfx;*.p12', '.pfx');
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -59,8 +65,12 @@ begin
     Result := 'The selected directory does not contain an imported test license.'
   else if not FileExists(KeyPage.Values[0]) or (Trim(OptionsPage.Values[0]) = '') then
     Result := 'Select the issuer public key and enter its key ID.'
-  else if (Pos('"', OptionsPage.Values[0]) > 0) or (Pos('"', OptionsPage.Values[1]) > 0) then
-    Result := 'Quotes are not allowed in the issuer ID or IPv4 address.';
+  else if ((Trim(OptionsPage.Values[2]) = '') <> (Trim(HttpsPage.Values[0]) = '')) then
+    Result := 'Provide both the warehouse HTTPS hostname and its PFX file.'
+  else if (Trim(HttpsPage.Values[0]) <> '') and not FileExists(HttpsPage.Values[0]) then
+    Result := 'Select an existing warehouse PFX file.'
+  else if (Pos('"', OptionsPage.Values[2]) > 0) or (Pos('"', OptionsPage.Values[0]) > 0) or (Pos('"', OptionsPage.Values[1]) > 0) then
+    Result := 'Quotes are not allowed in the issuer ID, IPv4 address or hostname.';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -77,6 +87,9 @@ begin
     ' -IssuerKeyId ' + AddQuotes(Trim(OptionsPage.Values[0]));
   if Trim(OptionsPage.Values[1]) <> '' then
     Arguments := Arguments + ' -Address ' + AddQuotes(Trim(OptionsPage.Values[1]));
+  if Trim(OptionsPage.Values[2]) <> '' then
+    Arguments := Arguments + ' -HttpsHostname ' + AddQuotes(Trim(OptionsPage.Values[2])) +
+      ' -HttpsPfxPath ' + AddQuotes(HttpsPage.Values[0]);
   if not Exec(PowerShell, Arguments, ExpandConstant('{app}'), SW_SHOWNORMAL,
       ewWaitUntilTerminated, ProvisionResult) then
     ProvisionResult := 1;
