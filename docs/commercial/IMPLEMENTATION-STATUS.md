@@ -277,3 +277,29 @@ credentials, follows no redirects, and checks expiry again before returning.
 Native Android/iOS launchers, camera integration, app signing and device
 acceptance remain open. The shared JavaScript module is exercised by the
 existing browser pairing flow and targeted parsing and identity tests.
+
+### Android pairing launcher
+
+The `mobile/` project packages the shared pairing parser in a Capacitor
+launcher. Its Android scanner accepts the employee QR, probes the warehouse
+over HTTPS with redirects disabled, and opens the warehouse login in the
+external browser only if the response URL and server ID match. Browser login
+and the browser-based inventory screens remain the business interface. The
+launcher does not store invitations or credentials.
+
+From `mobile/`, run `npm ci` and `npm run android:prepare` to generate and sync
+the Android project. The project requires Android SDK 36 and a Gradle
+toolchain that can download its locked distribution and dependencies.
+Build a debug package with `gradlew.bat assembleDebug` in `mobile/android/`
+on Windows or `./gradlew assembleDebug` on a compatible Unix host.
+The development application ID is `my.leet.warehouse`.
+
+The launcher requires trusted HTTPS. Android preparation configures
+system and user-installed certificate authorities for the warehouse CA
+while disallowing cleartext. The hostname and server identity checks
+remain in force. A browser and Android must both trust the site CA.
+
+Bundle creation and Android project generation/sync passed. APK compilation
+was attempted but blocked before compilation because the environment could
+not fetch the Gradle distribution. Android camera and certificate trust on
+real devices, release signing, iOS, and native business workflows remain open.

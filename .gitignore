@@ -43,3 +43,6 @@ Desktop.ini
 WarehouseService.exe
 *.pfx
 *.private.json
+
+# Generated Capacitor native project
+/mobile/android/
