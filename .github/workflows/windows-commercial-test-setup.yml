@@ -1,0 +1,49 @@
+name: Lee T Windows test setup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'installer/windows/**'
+      - 'scripts/windows/**'
+      - '.github/workflows/windows-commercial-test-setup.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Stage bundled Windows dependencies
+        shell: powershell
+        run: |
+          $nodeDirectory = Split-Path (Get-Command node.exe).Source
+          $postgresDirectory = Join-Path $env:ProgramFiles 'PostgreSQL\17'
+          ./scripts/windows/Stage-CommercialPayload.ps1 -NodeDirectory $nodeDirectory -PostgresDirectory $postgresDirectory -OutputDirectory (Join-Path $env:RUNNER_TEMP 'leet-payload')
+      - name: Build Windows test setup
+        shell: powershell
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $compiler)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          }
+          $output = Join-Path $env:RUNNER_TEMP 'leet-setup'
+          $payload = Join-Path $env:RUNNER_TEMP 'leet-payload'
+          & $compiler "/DPayloadDir=$payload" "/DBuildOutput=$output" 'installer/windows/LeeT-Test-Setup.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
+          $setup = Join-Path $output 'LeeT-Test-Setup.exe'
+          if (-not (Test-Path $setup -PathType Leaf)) { throw 'Setup executable was not produced.' }
+          Get-FileHash -Algorithm SHA256 $setup
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LeeT-Test-Setup
+          path: ${{ runner.temp }}/leet-setup/LeeT-Test-Setup.exe
+          if-no-files-found: error
