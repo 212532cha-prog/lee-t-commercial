@@ -1,0 +1,40 @@
+# Lee T Commercial Edition — implementation status (2026-11-06)
+
+## Source baseline
+
+- Source: `warehouse-inventory-0.8.5-candidate.zip` supplied by product owner.
+- Existing TAT LEE Warehouse business code is retained; no existing tests deleted or weakened.
+- Two Chinese-document filenames were restored from the original ZIP using Python `zipfile`, because system `unzip` mangled the names. This is a packaging/extraction repair, not a changed acceptance test.
+
+## Implemented here
+
+- `src/commercial/license.mjs`: Ed25519 signed offline license issue/verify primitives, device request with hashed hardware claims, exact installation identity, two-of-three hardware claim matching, version entitlement checks, key ID allowlist.
+- `src/commercial/license-center.mjs`: local **pilot-only** single-process file-backed creation/redemption of high-entropy single-use codes after explicit payment confirmation. Hashes codes at rest, serializes concurrent redemptions and records basic audit entries. NOT a public cloud service or production multi-instance safe ledger.
+- `src/commercial/pairing.mjs`: mDNS service descriptor data and expiring, single-use pairing invitation primitives. NOT actual mDNS broadcasting, HTTP routing, TLS authentication or an employee app.
+- 13 new tests in `tests/commercial-*.test.mjs`.
+
+## NOT implemented / not yet production-ready
+
+1. Cloud Lee T License Center (production transactional DB, MFA, roles, secret key custody, tamper-evident logs, payment integration and authorization endpoints).
+2. Windows hardware fingerprint collection and persistent installation IDs; issuance API is not wired to the Warehouse server.
+3. Online activation endpoints, offline request/import GUI, paid update UI, actual upgrade migration gates, server license enforcement. Offline licenses cannot instantaneously revoke an old disconnected PC.
+4. Real mDNS service advertisement and resolution, HTTPS trust and server certificate pinning, authenticated device enrollment and revocation.
+5. Android/iOS Capacitor apps and camera-based product scanning.
+6. Commercial Windows all-in-one installer and clean-machine acceptance testing.
+7. Commercial backup encryption/restore drills and real-device end-to-end testing.
+
+## Local test environment findings
+
+- Node.js installed: 22.16.0; project requires `^22.17.0 || >=24`, so runtime compliance is **not met**.
+- `npm ci --offline` failed because npm cache lacks `yocto-queue`; online `npm ci` did not finish in the available runtime. No dependence or test has been removed to work around that.
+- Existing full suite cannot load 10 dependent test files (e.g. `pg`, `sharp`) because `node_modules` is incomplete. These must be rerun in a complete supported Node runtime.
+- `node scripts/check-stage0.mjs` passes after ZIP filename repair.
+- Commercial primitives pass their 13 tests; these are not proof that the installed product works on Windows or mobile phones.
+
+## Release gates (all mandatory)
+
+- `npm ci` under supported Node 24; `npm test`; `npm run lint`; `npm run check`; other preflight gates.
+- PostgreSQL transactional integration tests, payment/redeem concurrency in real DB and duplicate customer isolation.
+- Real Windows 11 install/restore test; Android and iOS LAN pairing, revocation, camera scan and OS permission tests.
+- Backup/recovery, rollback, HTTPS certificate, router isolation and security abuse tests.
+- Do not label the product sellable or fully accepted until every gate is passed and production key management is in place.

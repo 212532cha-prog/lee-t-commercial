@@ -1,0 +1,42 @@
+{
+  "name": "warehouse-inventory",
+  "private": true,
+  "version": "0.8.5",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check-stage0.mjs",
+    "scan:secrets": "node src/preflight/secrets.mjs",
+    "gate:stage0": "node scripts/check-stage0-gate.mjs",
+    "preflight:https": "node src/preflight/server.mjs",
+    "gate:devices": "node scripts/check-stage0-gate.mjs --require-devices",
+    "start": "node scripts/start-app.mjs",
+    "recover:admin": "node scripts/recover-admin.mjs",
+    "lint": "eslint .",
+    "package:candidate": "node scripts/package-candidate.mjs"
+  },
+  "engines": {
+    "node": "^22.17.0 || >=24"
+  },
+  "dependencies": {
+    "@fontsource/noto-sans-sc": "^5.3.1",
+    "@node-rs/argon2": "^2.2.2",
+    "fontkit": "^2.0.4",
+    "jsqr": "^1.4.0",
+    "pdfkit": "^0.20.2",
+    "pg": "^8.23.1",
+    "qrcode": "^1.5.4",
+    "read-excel-file": "^9.3.14",
+    "saxen": "^11.2.0",
+    "sharp": "^0.35.5",
+    "yauzl": "^3.4.0",
+    "yazl": "^3.3.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.14",
+    "@sparticuz/chromium": "^153.0.0",
+    "eslint": "^10.14.0",
+    "globals": "^17.13.0",
+    "playwright-core": "^1.64.1"
+  }
+}

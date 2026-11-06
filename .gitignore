@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Build outputs
+dist/
+build/
+coverage/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Production data
+data/
+database/
+backups/
+logs/
+uploads/
+
+# Temporary files
+tmp/
+temp/
+*.log
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Editors
+.vscode/
+.idea/
+
+
+# Runtime service outputs and protected installation files
+WarehouseService.exe
+*.pfx
+*.private.json

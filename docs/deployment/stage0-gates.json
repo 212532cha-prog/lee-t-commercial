@@ -1,0 +1,96 @@
+{
+  "stage": 0,
+  "revision": "REQ-20261101",
+  "gates": [
+    {
+      "id": "repository-private",
+      "status": "passed",
+      "evidence": "GitHub connector get_repo: niubi6577/warehouse-inventory visibility=private, source bd63e2a347c5c26b59ea2424018430617fc212eb",
+      "verifiedAt": "2026-11-01T09:07:41.819920+00:00"
+    },
+    {
+      "id": "specification-consistent",
+      "status": "passed",
+      "verifiedAt": "2026-11-01T09:09:06.694039+00:00",
+      "evidence": "docs/test-reports/stage-0-current.md: actual local checks; not business or device acceptance"
+    },
+    {
+      "id": "local-tests",
+      "status": "passed",
+      "verifiedAt": "2026-11-01T09:09:06.694039+00:00",
+      "evidence": "docs/test-reports/stage-0-current.md: actual local checks; not business or device acceptance"
+    },
+    {
+      "id": "secret-scan",
+      "status": "passed",
+      "verifiedAt": "2026-11-01T09:09:06.694039+00:00",
+      "evidence": "docs/test-reports/stage-0-current.md: actual local checks; not business or device acceptance"
+    },
+    {
+      "id": "github-ci",
+      "status": "passed",
+      "evidence": "https://github.com/niubi6577/warehouse-inventory/actions/runs/41291912625 — source commit 7fc89e2b2b01411bb8654d9bbfb575f5aca768ec; Node 22 and 24 jobs including TLS/tests/secrets/spec checks succeeded",
+      "verifiedAt": "2026-11-01T09:10:54.209876+00:00"
+    },
+    {
+      "id": "windows-preflight",
+      "status": "pending",
+      "reason": "Target Windows has not run this revision of the read-only preflight"
+    },
+    {
+      "id": "trusted-https-iphone",
+      "status": "pending",
+      "reason": "Needs trusted LAN HTTPS, real permission and live video on iPhone"
+    },
+    {
+      "id": "trusted-https-android",
+      "status": "pending",
+      "reason": "Needs trusted LAN HTTPS, real permission and live video on Android"
+    },
+    {
+      "id": "lan-without-internet",
+      "status": "pending",
+      "reason": "Needs actual warehouse LAN test while internet is disconnected"
+    },
+    {
+      "id": "physical-hid-and-labels",
+      "status": "pending",
+      "reason": "Needs physical label print, decode and scanner count check"
+    },
+    {
+      "id": "lan-loss-and-reconnect",
+      "status": "pending",
+      "reason": "Needs actual warehouse weak signal, disconnect and reconnect scenarios"
+    },
+    {
+      "id": "windows-unattended-restart",
+      "status": "pending",
+      "reason": "Needs real target Windows shutdown and unattended service start"
+    },
+    {
+      "id": "warehouse-network-exposure",
+      "status": "pending",
+      "reason": "Needs target LAN, firewall, local database listener and remote ingress inspection"
+    },
+    {
+      "id": "physical-backup-volumes",
+      "status": "pending",
+      "reason": "Needs real primary and fallback volumes, including full-volume behavior"
+    },
+    {
+      "id": "physical-machine-restore",
+      "status": "pending",
+      "reason": "Needs restore and verification on a separate physical Windows installation"
+    },
+    {
+      "id": "upgrade-and-rollback",
+      "status": "pending",
+      "reason": "Needs an isolated rehearsal of installation, upgrade, migration and failure rollback"
+    },
+    {
+      "id": "warehouse-user-acceptance",
+      "status": "pending",
+      "reason": "Needs warehouse administrator and employee sign-off against the acceptance checklist"
+    }
+  ]
+}

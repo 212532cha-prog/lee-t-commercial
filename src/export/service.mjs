@@ -1,0 +1,76 @@
+import {randomUUID} from 'node:crypto';
+import {mkdir,open,rename,rm,unlink,readdir} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+import {transaction} from '../db/database.mjs';
+import {AuthError} from '../auth/service.mjs';
+import {identifier} from '../catalog/service.mjs';
+import {safeRead,fileHash} from '../backup/archive.mjs';
+import {renderInWorker} from './worker.mjs';
+export const inventoryFields={productCode:{label:'Product Code',width:20},name:{label:'Product Name',width:36},category:{label:'Category',width:24},location:{label:'Location',width:28},quantity:{label:'Current Quantity',kind:'integer',width:20},minimumStock:{label:'Minimum Stock',kind:'integer',width:20},suppliers:{label:'Suppliers',width:34},individualCost:{label:'Individual Cost (RM)',kind:'money',width:22},value:{label:'Stock Value (RM)',kind:'money',width:24},qrToken:{label:'QR Token',width:36}};
+const def=(label,kind='text',width=24)=>({label,kind,width});
+function choices(input){
+ if(!['pdf','xlsx'].includes(input.format)||!Array.isArray(input.sections)||!input.sections.length||input.sections.some(s=>!['inventory','history','reports','costs'].includes(s)))throw new AuthError('INVALID_EXPORT');
+ const selected=[...new Set(input.sections)],fields=(!selected.includes('inventory')&&(!input.fields||input.fields.length===0)?undefined:input.fields)??['productCode','name','category','location','quantity','minimumStock'];if(!Array.isArray(fields)||!fields.length||fields.some(f=>!Object.hasOwn(inventoryFields,f)))throw new AuthError('INVALID_EXPORT_FIELDS');
+ const output={format:input.format,sections:selected,fields:[...new Set(fields)],includeTrashed:input.includeTrashed===true};
+ for(const key of ['categoryId','locationId'])if(input[key])output[key]=identifier(input[key]);
+ for(const key of ['productIds','reportIds'])if(input[key]!==undefined){if(!Array.isArray(input[key])||!input[key].length||input[key].length>1000)throw new AuthError('INVALID_EXPORT_SCOPE');output[key]=[...new Set(input[key].map(identifier))];}
+ if(input.kind){if(!['inbound','outbound','adjustment'].includes(input.kind))throw new AuthError('INVALID_KIND');output.kind=input.kind;}
+ for(const key of ['from','to'])if(input[key]){const d=new Date(input[key]);if(!Number.isFinite(d.getTime()))throw new AuthError('INVALID_DATE');output[key]=d.toISOString();}if(output.from&&output.to&&output.from>output.to)throw new AuthError('INVALID_DATE_RANGE');return output;
+}
+export class ExportService{
+ constructor(pool,auth,dataDir,{fault}={}){this.pool=pool;this.auth=auth;this.directory=resolve(dataDir,'exports');this.progress=new Map();this.fault=fault;this.tail=Promise.resolve();}
+ async ready(){await mkdir(this.directory,{recursive:true,mode:0o700});}
+ async create(raw,csrf,input){const selected=choices(input),id=randomUUID();await transaction(this.pool,async db=>{const a=await this.auth.authorizeIn(db,raw,{admin:true,write:true,csrf});await db.query('INSERT INTO export_jobs(id,user_id,format,choices) VALUES($1,$2,$3,$4::jsonb)',[id,a.user.id,selected.format,JSON.stringify(selected)]);});return {id,status:'pending'};}
+ queue(id){const task=this.tail.then(()=>this.generate(id));this.tail=task.catch(()=>{});return task;}
+ async status(raw,id){identifier(id);const a=await this.auth.authorize(raw,{admin:true});const r=(await this.pool.query('SELECT id,user_id,status,processed,error,expires_at FROM export_jobs WHERE id=$1 AND expires_at>clock_timestamp()',[id])).rows[0];if(!r||r.user_id!==a.user.id)throw new AuthError('EXPORT_NOT_FOUND_OR_INVALIDATED',404);return {id:r.id,status:r.status,processed:this.progress.get(id)??Number(r.processed),error:r.error,expiresAt:r.expires_at};}
+ async capture(db,id,selected,spool){
+  const handle=await open(spool,'wx',0o600),used=new Set(),eventIds=new Set(),reportIds=new Set();let processed=0;
+  const write=async r=>handle.writeFile(JSON.stringify(r)+'\n');
+  const row=async(values,productId)=>{await write({type:'row',values});used.add(productId);this.progress.set(id,++processed);};
+  try{
+   await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+   const settings=(await db.query('SELECT maintenance,admin_backup_required FROM system_settings WHERE id=1 FOR SHARE')).rows[0];if(settings.maintenance||settings.admin_backup_required)throw new AuthError(settings.maintenance?'MAINTENANCE':'ADMIN_BACKUP_REQUIRED',423);
+   const snapshotAt=(await db.query('SELECT transaction_timestamp() AS now')).rows[0].now;
+   const values=[],where=[],bind=v=>{values.push(v);return '$'+values.length;};if(selected.categoryId)where.push('p.category_id='+bind(selected.categoryId));if(selected.locationId)where.push('p.location_id='+bind(selected.locationId));if(selected.productIds)where.push('p.id=ANY('+bind(selected.productIds)+'::uuid[])');
+   const products=(await db.query("SELECT p.id,p.name,p.product_code,p.qr_token,p.location_id,b.quantity,p.minimum_stock,p.individual_cost,(p.individual_cost*b.quantity)::text AS value,COALESCE(c.name,p.category_name_snapshot||' (deleted)') AS category,(SELECT string_agg(COALESCE(s.name,ps.supplier_name_snapshot)||CASE WHEN ps.supplier_id IS NULL THEN ' (deleted)' ELSE '' END,', ' ORDER BY ps.is_default DESC,ps.id) FROM product_suppliers ps LEFT JOIN suppliers s ON s.id=ps.supplier_id WHERE ps.product_id=p.id) AS suppliers FROM products p JOIN inventory_balances b ON b.product_id=p.id LEFT JOIN categories c ON c.id=p.category_id"+(where.length?' WHERE '+where.join(' AND '):'')+' ORDER BY lower(p.name) COLLATE "C",p.sort_order',values)).rows;
+   for(const [key,table]of [['productIds','products'],['reportIds','count_reports']])if(selected[key]){const existing=(await db.query(`SELECT id FROM ${table} WHERE id=ANY($1::uuid[])`,[selected[key]])).rows;if(existing.length!==selected[key].length)throw new AuthError('EXPORT_RESOURCE_CHANGED',409);}
+   const ids=products.map(p=>p.id),locations=(await db.query('SELECT id,name,parent_id FROM warehouse_locations')).rows;
+   const location=id=>{let result=[];const seen=new Set();while(id&&!seen.has(id)){seen.add(id);const r=locations.find(l=>l.id===id);if(!r)break;result.unshift(r.name);id=r.parent_id;}return result.join(' / ');};
+   const categoryName=selected.categoryId?(await db.query('SELECT name FROM categories WHERE id=$1',[selected.categoryId])).rows[0]?.name:null;const filterLabel=[`Products: ${ids.length}${selected.productIds?' (selected)':''}`,categoryName?'Category: '+categoryName:null,selected.locationId?'Location: '+location(selected.locationId):null,`History: ${selected.from||'Any start'} to ${selected.to||'Any end'}`,`Type: ${selected.kind||'All'}`,`Reports: ${selected.reportIds?'Selected ('+selected.reportIds.length+')':selected.includeTrashed?'Including trash':'Active only'}`].filter(Boolean).join('; ');
+   await write({type:'metadata',snapshotAt,filterLabel});
+   for(const section of selected.sections){
+    if(section==='inventory'){await write({type:'section',key:section,title:'Product Inventory',columns:selected.fields.map(f=>inventoryFields[f])});for(const p of products){const mapped={productCode:p.product_code,name:p.name,category:p.category,location:location(p.location_id),quantity:p.quantity,minimumStock:p.minimum_stock,suppliers:p.suppliers||'',individualCost:p.individual_cost,value:p.value,qrToken:p.qr_token};await row(selected.fields.map(f=>mapped[f]),p.id);}}
+    if(section==='costs'){await write({type:'section',key:section,title:'Product Costs',columns:[def('Product Code'),def('Product Name','text',36),def('Current Quantity','integer'),def('Individual Cost (RM)','money'),def('Stock Value (RM)','money')]});for(const p of products)await row([p.product_code,p.name,p.quantity,p.individual_cost,p.value],p.id);}
+    if(section==='history'){
+     await write({type:'section',key:section,title:'Stock History',columns:[def('Server Time (GMT+8)','date',30),def('Type'),def('Product Code'),def('Product Name','text',36),def('Before','integer'),def('Change','integer'),def('After','integer')]});let last=null;
+     do{const params=[ids],conditions=['e.product_id=ANY($1::uuid[])'],bind=v=>{params.push(v);return '$'+params.length;};if(last)conditions.push('e.id<'+bind(last));if(selected.kind)conditions.push('e.kind='+bind(selected.kind));if(selected.from)conditions.push('e.created_at>='+bind(selected.from)+'::timestamptz');if(selected.to)conditions.push('e.created_at<='+bind(selected.to)+'::timestamptz');const rows=(await db.query('SELECT e.id,e.product_id,e.created_at,e.kind,e.before_quantity,e.quantity_delta,e.after_quantity,p.name,p.product_code FROM inventory_events e JOIN products p ON p.id=e.product_id WHERE '+conditions.join(' AND ')+' ORDER BY e.id DESC LIMIT 500',params)).rows;
+      for(const r of rows){eventIds.add(String(r.id));await row([r.created_at,{inbound:'Stock In',outbound:'Stock Out',adjustment:'Stock Adjustment'}[r.kind],r.product_code,r.name,r.before_quantity,r.quantity_delta,r.after_quantity],r.product_id);}last=rows.length===500?rows.at(-1).id:null;
+     }while(last);
+    }
+    if(section==='reports'){
+     await write({type:'section',key:section,title:'Count Reports',columns:[def('Report Code', 'text',18),def('Task Title','text',28),def('Submitted At (GMT+8)','date',30),def('Employee Name','text',28),def('Product Code','text',18),def('Product Name','text',32),def('System Quantity','integer',18),def('Actual Quantity','integer',18),def('Difference','integer',18)]});let offset=0;
+     while(true){const params=[ids],conditions=['i.product_id=ANY($1::uuid[])'];const bind=v=>{params.push(v);return '$'+params.length;};if(!selected.includeTrashed)conditions.push('r.trashed=false');if(selected.reportIds)conditions.push('r.id=ANY('+bind(selected.reportIds)+'::uuid[])');if(selected.from)conditions.push('r.submitted_at>='+bind(selected.from)+'::timestamptz');if(selected.to)conditions.push('r.submitted_at<='+bind(selected.to)+'::timestamptz');params.push(offset);const rows=(await db.query('SELECT r.report_code,r.task_title,r.submitted_at,r.employee_name,i.* FROM count_reports r JOIN count_report_items i ON i.report_id=r.id WHERE '+conditions.join(' AND ')+` ORDER BY r.submitted_at DESC,r.id DESC,i.product_id LIMIT 500 OFFSET $${params.length}`,params)).rows;
+      for(const r of rows){reportIds.add(r.report_id);await row([r.report_code,r.task_title,r.submitted_at,r.employee_name,r.product_code,r.product_name,r.system_quantity,r.actual_quantity,r.difference],r.product_id);}if(rows.length<500)break;offset+=rows.length;
+     }
+    }
+   }
+   for(const productId of [...used].sort())await db.query('INSERT INTO export_resources(job_id,product_id) VALUES($1,$2)',[id,productId]);
+   for(const eventId of eventIds)await db.query('INSERT INTO export_history_resources(job_id,event_id) VALUES($1,$2)',[id,eventId]);
+   for(const reportId of reportIds)await db.query('INSERT INTO export_report_resources(job_id,report_id) VALUES($1,$2)',[id,reportId]);
+   await db.query('UPDATE export_jobs SET snapshot_at=$2,processed=$3 WHERE id=$1',[id,snapshotAt,processed]);await handle.sync();await db.query('COMMIT');return {snapshotAt,processed};
+  }catch(e){await db.query('ROLLBACK');throw e;}finally{await handle.close();}
+ }
+ async generate(id){identifier(id);await this.ready();const job=(await this.pool.query("UPDATE export_jobs SET status='running' WHERE id=$1 AND status='pending' AND expires_at>clock_timestamp() RETURNING *",[id])).rows[0];if(!job)return;const spool=join(this.directory,id+'.spool'),partial=join(this.directory,id+'.partial'),final=join(this.directory,id+'.'+job.format);let db;
+  try{db=await this.pool.connect();try{await this.capture(db,id,job.choices,spool);}finally{db.release();db=null;}if(this.fault)await this.fault({phase:'after-snapshot',id});
+   await renderInWorker({format:job.format,spool,target:partial,work:join(this.directory,id+'.work')},{onStarted:this.fault?()=>this.fault({phase:'render-started',id}):undefined});
+   const info=await fileHash(partial);await transaction(this.pool,async db=>{const current=(await db.query('SELECT id FROM export_jobs WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!current)throw new AuthError('EXPORT_NOT_FOUND_OR_INVALIDATED',404);if(!job.choices.includeTrashed&&(await db.query('SELECT r.report_id FROM export_report_resources r JOIN count_reports c ON c.id=r.report_id WHERE r.job_id=$1 AND c.trashed=true LIMIT 1',[id])).rows.length)throw new AuthError('EXPORT_RESOURCE_CHANGED',409);await rename(partial,final);await db.query("UPDATE export_jobs SET status='ready',sha256=$2,bytes=$3 WHERE id=$1",[id,info.sha256,info.bytes]);});
+  }catch(error){if(db)db.release();await rm(partial,{force:true});await rm(final,{force:true});await this.pool.query("UPDATE export_jobs SET status='failed',error=$2 WHERE id=$1",[id,error instanceof AuthError?error.code:error.code==='EXPORT_FONT_GLYPH_MISSING'?error.message:'EXPORT_GENERATION_FAILED']);throw error;}
+  finally{await rm(spool,{force:true});this.progress.delete(id);}
+ }
+ async download(raw,id){identifier(id);return transaction(this.pool,async db=>{const a=await this.auth.authorizeIn(db,raw,{admin:true});const job=(await db.query("SELECT * FROM export_jobs WHERE id=$1 AND user_id=$2 AND status='ready' AND expires_at>clock_timestamp() FOR UPDATE",[id,a.user.id])).rows[0];if(!job)throw new AuthError('EXPORT_NOT_FOUND_OR_INVALIDATED',404);const path=join(this.directory,id+'.'+job.format),info=await fileHash(path);if(info.sha256!==job.sha256)throw new AuthError('EXPORT_CHECKSUM_FAILED');return {handle:await safeRead(path),bytes:info.bytes,filename:'warehouse-'+id+'.'+job.format,mime:job.format==='pdf'?'application/pdf':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'};});}
+ async reap({startup=false}={}){await this.ready();if(startup)await this.pool.query("UPDATE export_jobs SET status='failed',error='INTERRUPTED_RETRY_REQUIRED' WHERE status IN ('pending','running')");const expired=(await this.pool.query('DELETE FROM export_jobs WHERE expires_at<=clock_timestamp() RETURNING id,format')).rows;for(const r of expired)for(const extension of [r.format,'partial','spool','work'])await this.pool.query("INSERT INTO file_cleanup(file_key,asset_kind) VALUES($1,'export') ON CONFLICT DO NOTHING",[r.id+'.'+extension]);
+  const queue=(await this.pool.query("SELECT file_key FROM file_cleanup WHERE asset_kind='export'")).rows;let pending=0;for(const r of queue){if(!/^[a-f\d-]{36}\.(pdf|xlsx|partial|spool|work)$/.test(r.file_key)){pending++;continue;}try{if(r.file_key.endsWith('.work'))await rm(join(this.directory,r.file_key),{recursive:true,force:true});else await unlink(join(this.directory,r.file_key));await this.pool.query("DELETE FROM file_cleanup WHERE file_key=$1 AND asset_kind='export'",[r.file_key]);}catch(e){if(e.code==='ENOENT')await this.pool.query("DELETE FROM file_cleanup WHERE file_key=$1 AND asset_kind='export'",[r.file_key]);else{pending++;await this.pool.query('UPDATE file_cleanup SET attempts=attempts+1 WHERE file_key=$1',[r.file_key]);}}}
+  if(startup){const files=await readdir(this.directory);for(const f of files){const m=f.match(/^([a-f\d-]{36})\.(pdf|xlsx|partial|spool|work)$/);if(m&&!(await this.pool.query('SELECT id FROM export_jobs WHERE id=$1',[m[1]])).rows.length)await rm(join(this.directory,f),{recursive:true,force:true});}}
+  return {cleanupPending:pending>0};
+ }
+}

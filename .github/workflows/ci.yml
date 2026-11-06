@@ -1,0 +1,119 @@
+name: Warehouse Inventory CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['22', '24']
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: warehouse_test
+          POSTGRES_PASSWORD: test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d warehouse_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      WAREHOUSE_NATIVE_PG: '1'
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: test-only
+      PGDATABASE: warehouse_test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - name: Reproducible dependency install
+        run: npm ci --ignore-scripts
+      - name: Secret and production-data scan
+        run: npm run scan:secrets
+      - name: Lint source and browser modules
+        run: npm run lint
+      - name: Install independent PDF text verifier if missing
+        run: command -v pdftotext || (sudo apt-get update -qq && sudo apt-get install -y poppler-utils)
+      - name: Run tests (including real TLS)
+        run: npm test
+      - name: Native application process restart and single-instance protection
+        run: node scripts/test-native-runtime.mjs
+      - name: Check current specification mapping
+        run: npm run check
+
+  windows-service:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Parse every installation script
+        shell: powershell
+        run: |
+          Get-ChildItem scripts/windows/*.ps1 | ForEach-Object {
+            $tokens=$null; $errors=$null
+            [void][Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors)
+            if ($errors.Count) { throw ($errors | Out-String) }
+          }
+      - name: Run read-only Windows preflight
+        shell: powershell
+        run: |
+          $report = & ./scripts/windows-preflight.ps1 | ConvertFrom-Json
+          if ($report.Revision -ne 'REQ-20261101' -or -not $report.OS -or -not $report.NodeVersion -or -not $report.DataPath.Exists) {
+            throw 'Read-only preflight did not identify the Windows runner and existing application directory.'
+          }
+          foreach ($key in @('ServiceAutostart', 'TrustedHttps', 'Camera', 'DatabaseRestore')) {
+            if ($report.$key -ne 'NotTested') { throw "Preflight cannot attest to $key." }
+          }
+          if ($report.BackupPath1.Configured -or $report.BackupPath2.Configured -or $report.DataPath.WritePermission -ne 'NotTested') {
+            throw 'Unconfigured backup paths and untested disk permissions must be reported accurately.'
+          }
+      - name: Native SCM service and graceful shutdown
+        shell: powershell
+        run: ./scripts/windows/Test-Service.ps1
+      - name: Generated LAN certificate trusted HTTPS and hostname enforcement
+        shell: powershell
+        run: ./scripts/windows/Test-Certificate.ps1
+
+      - name: Install runtime test dependencies
+        run: npm ci --ignore-scripts
+      - name: Windows native PostgreSQL application start and restart
+        shell: powershell
+        run: ./scripts/windows/Test-NativeRuntime.ps1
+
+  candidate-package:
+    needs: [test, windows-service]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --omit=dev --ignore-scripts
+      - run: npm run scan:secrets
+      - run: npm run package:candidate
+      - name: Independently verify candidate manifest and source hashes
+        run: python scripts/verify-candidate.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: warehouse-inventory-source-candidate
+          path: dist/*-candidate.zip
+          if-no-files-found: error
+          retention-days: 30

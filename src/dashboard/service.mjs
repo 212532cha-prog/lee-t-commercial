@@ -1,0 +1,17 @@
+import {transaction} from '../db/database.mjs';
+import {AuthError} from '../auth/service.mjs';
+import {identifier} from '../catalog/service.mjs';
+export class DashboardService{
+ constructor(pool,auth){this.pool=pool;this.auth=auth;}
+ async get(raw){const actor=await this.auth.authorize(raw);if(actor.user.role!=='admin')return {role:'employee',actions:['inbound','outbound','count','products']};return transaction(this.pool,async db=>{
+  await db.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+  const statistics=(await db.query('SELECT count(*) AS products,COALESCE(sum(b.quantity),0) AS quantity,COALESCE(sum(b.quantity*p.individual_cost),0)::text AS value,count(*) FILTER(WHERE b.quantity<0) AS negative FROM products p JOIN inventory_balances b ON b.product_id=p.id')).rows[0];
+  const negative=(await db.query('SELECT p.id,p.name,p.product_code,b.quantity,n.started_at::text AS notification_token,n.read_at FROM products p JOIN inventory_balances b ON b.product_id=p.id LEFT JOIN negative_notifications n ON n.product_id=p.id WHERE b.quantity<0 ORDER BY b.quantity,p.id')).rows;
+  const low=(await db.query('SELECT p.id,p.name,p.product_code,b.quantity,p.minimum_stock FROM products p JOIN inventory_balances b ON b.product_id=p.id WHERE b.quantity>=0 AND b.quantity<p.minimum_stock ORDER BY b.quantity,p.id')).rows;
+  const recent=(await db.query('SELECT e.id,e.kind,e.created_at,p.id AS product_id,p.name,p.product_code,e.quantity_delta FROM inventory_events e JOIN products p ON p.id=e.product_id ORDER BY e.id DESC LIMIT 10')).rows;
+  const warning=(await db.query('SELECT warning FROM backup_config WHERE id=1')).rows[0].warning;
+  return {role:'admin',statistics:{productCount:Number(statistics.products),quantity:String(statistics.quantity),totalValue:statistics.value,negativeCount:Number(statistics.negative)},negative:negative.map(r=>({id:r.id,name:r.name,productCode:r.product_code,quantity:Number(r.quantity),notificationToken:r.notification_token,read:!!r.read_at})),low:low.map(r=>({id:r.id,name:r.name,productCode:r.product_code,quantity:Number(r.quantity),minimumStock:Number(r.minimum_stock)})),recent:recent.map(r=>({id:String(r.id),kind:r.kind,time:r.created_at,productId:r.product_id,name:r.name,productCode:r.product_code,quantityDelta:Number(r.quantity_delta)})),warning};
+ });}
+ async markRead(raw,csrf,id,input){identifier(id);if(typeof input.token!=='string'||input.token.length>64||!Number.isFinite(new Date(input.token).getTime()))throw new AuthError('INVALID_NOTIFICATION');return transaction(this.pool,async db=>{await this.auth.authorizeIn(db,raw,{admin:true,write:true,csrf});const r=await db.query('UPDATE negative_notifications SET read_at=clock_timestamp() WHERE product_id=$1 AND started_at=$2::timestamptz RETURNING product_id',[id,input.token]);if(!r.rows.length)throw new AuthError('NOTIFICATION_CHANGED',409);return {read:true};});}
+ async costs(raw,{cursor}={}){await this.auth.authorize(raw,{admin:true});const params=[];let where='';if(cursor){identifier(cursor);params.push(cursor);where=' WHERE p.id>$1';}const rows=(await this.pool.query('SELECT p.id,p.name,p.product_code,b.quantity,p.individual_cost,(p.individual_cost*b.quantity)::text AS value FROM products p JOIN inventory_balances b ON b.product_id=p.id'+where+' ORDER BY p.id LIMIT 101',params)).rows;return {products:rows.slice(0,100).map(r=>({id:r.id,name:r.name,productCode:r.product_code,quantity:Number(r.quantity),individualCost:r.individual_cost,value:r.value})),nextCursor:rows.length>100?rows[99].id:null};}
+}
