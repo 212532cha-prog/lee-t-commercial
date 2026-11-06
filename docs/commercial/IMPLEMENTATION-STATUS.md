@@ -344,3 +344,9 @@ key into a service-readable directory, and makes the protected service
 configuration read-only for the warehouse service account.
 The customer wizard, executable packaging and end-to-end rollback validation
 remain open.
+
+The installer-side entry `Install-CommercialPayload.ps1` consumes the
+staged payload and verified offline license. It wires up the bundled Node
+and PostgreSQL paths automatically and selects the LAN address when exactly
+one suitable private IPv4 address is available. This entry is intended to
+be called by setup packaging, and is not the customer-facing executable.
