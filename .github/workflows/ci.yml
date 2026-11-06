@@ -72,6 +72,9 @@ jobs:
             [void][Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors)
             if ($errors.Count) { throw ($errors | Out-String) }
           }
+      - name: Verify warehouse network selection
+        shell: powershell
+        run: ./scripts/windows/Test-WarehouseNetworkSelection.ps1
       - name: Run read-only Windows preflight
         shell: powershell
         run: |

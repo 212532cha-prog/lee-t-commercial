@@ -85,3 +85,26 @@ test('Android workspace resume rechecks the saved identity and opens without an 
   }), /INVALID_PAIRING_LINK/);
   assert.deepEqual(opened, [origin + '/']);
 });
+
+test('Android pairing uses the scanned pin for both the initial probe and resume and never falls back', async () => {
+  const certificateFingerprint = 'ab'.repeat(32);
+  const pinnedQr = origin + '/#pairing=' + encodeURIComponent(JSON.stringify({ ...invitation, certificateFingerprint }));
+  const request = () => assert.fail('A pinned warehouse must not use the unpinned request.');
+  const scan = async () => ({ ScanResult: pinnedQr });
+  const opened = [];
+  const open = async ({ url }) => opened.push(url);
+  const now = () => clock;
+  const remembered = [];
+  const remember = warehouse => remembered.push(warehouse);
+  await assert.rejects(launchPairing({ scan, request, open, now }), /PAIRING_PIN_REQUIRED/);
+  const requestPinned = async options => {
+    assert.deepEqual(options, { url: origin + '/api/commercial/server-identity', certificateFingerprint });
+    return { status: 200, url: options.url, data: { schema: 1, serverId: invitation.serverId } };
+  };
+  await launchPairing({ scan, request, requestPinned, open, remember, now });
+  assert.deepEqual(remembered, [{ origin, serverId: invitation.serverId, certificateFingerprint }]);
+  await resumeWarehouse({ warehouse: remembered[0], request, requestPinned, open });
+  assert.equal(opened.length, 2);
+  await assert.rejects(resumeWarehouse({ warehouse: remembered[0], request, open }), /PAIRING_PIN_REQUIRED/);
+  assert.equal(opened.length, 2);
+});

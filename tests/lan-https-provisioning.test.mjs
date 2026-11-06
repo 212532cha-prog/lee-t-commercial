@@ -1,4 +1,5 @@
 import { strict as assert } from 'node:assert';
+import { X509Certificate } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:https';
@@ -6,6 +7,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { pairingCertificateFingerprint } from '../src/runtime/config.mjs';
 import { probeWarehouseHttps, verifyLanHttps } from '../scripts/verify-lan-https.mjs';
 
 test('LAN HTTPS preflight verifies DNS, PFX, trust and the DNS SAN through a real TLS handshake', async t => {
@@ -22,7 +24,15 @@ test('LAN HTTPS preflight verifies DNS, PFX, trust and the DNS SAN through a rea
     '-certfile', 'ca.pem', '-passout', 'pass:fixture', '-out', 'server.pfx');
   const input = { hostname: 'warehouse.example', address: '192.168.0.97', passphrase: 'fixture',
     pfx: await readFile(join(cwd, 'server.pfx')) };
-  const ca = await readFile(join(cwd, 'ca.pem'));
+  const caPath = join(cwd, 'ca.pem');
+  const ca = await readFile(caPath);
+  const leafPath = join(cwd, 'leaf.pem');
+  const leaf = new X509Certificate(await readFile(leafPath));
+  assert.equal(await pairingCertificateFingerprint({ LEE_T_PAIRING_CERT_PATH: leafPath }),
+    leaf.fingerprint256.replaceAll(':', '').toLowerCase());
+  await assert.rejects(pairingCertificateFingerprint({ LEE_T_PAIRING_CERT_PATH: caPath }),
+    /PAIRING_CERTIFICATE_MUST_BE_SERVER_LEAF/);
+  assert.equal(await pairingCertificateFingerprint({}), undefined);
   const resolve = async () => [{ address: input.address, family: 4 }];
   await verifyLanHttps(input, { resolve, ca });
   await assert.rejects(verifyLanHttps(input, { resolve }), /self.signed|issuer|verify/i);

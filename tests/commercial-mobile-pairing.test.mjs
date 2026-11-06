@@ -17,6 +17,7 @@ test('mobile QR parsing enforces HTTPS, matching origin, expiry and known fields
   for (const url of ['http://warehouse.local', 'https://name@warehouse.local', 'https://warehouse.local/other']) {
     assert.throws(() => parsePairingQr(qr(invitation, url), { now }), /INVALID_PAIRING_LINK/);
   }
+  assert.throws(() => parsePairingQr(qr({ ...invitation, certificateFingerprint: 'not-a-pin' }), { now }), /INVALID_PAIRING_LINK/);
   assert.throws(() => parsePairingFragment('#pairing=%ZZ', { now }), /INVALID_PAIRING_LINK/);
   assert.throws(() => parsePairingQr(qr(), { now: now + 120000 }), /PAIRING_LINK_EXPIRED/);
 });

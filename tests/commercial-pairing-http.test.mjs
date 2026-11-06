@@ -22,7 +22,8 @@ test('commercial QR enrollment verifies employees, binds one device and revokes 
   });
   await migrate(pool);
   const origin = 'https://warehouse.test';
-  const pairing = new EmployeePairing({ origin, serverId: randomUUID() });
+  const certificateFingerprint = 'ab'.repeat(32);
+  const pairing = new EmployeePairing({ origin, serverId: randomUUID(), certificateFingerprint });
   const internalAuth = new AuthService(pool);
   const adminSecret = randomUUID();
   await internalAuth.bootstrap(adminSecret);
@@ -70,6 +71,7 @@ test('commercial QR enrollment verifies employees, binds one device and revokes 
   assert.equal(decoded.origin, origin);
   const invitation = JSON.parse(decodeURIComponent(decoded.hash.slice('#pairing='.length)));
   assert.deepEqual(invitation, issued.body.invitation);
+  assert.equal(invitation.certificateFingerprint, certificateFingerprint);
   assert.equal((await login({ ...other, invitation })).status, 403);
   assert.equal((await login({ ...employee, password: randomUUID(), invitation })).status, 401);
   assert.equal((await login({ ...employee, invitation: { ...invitation, serverId: randomUUID() } })).status, 403);

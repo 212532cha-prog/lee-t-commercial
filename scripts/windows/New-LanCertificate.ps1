@@ -12,8 +12,10 @@ try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
 $passphrase=[Convert]::ToBase64String($bytes)
 $pfx=Join-Path $Directory 'server.pfx'
 Export-PfxCertificate -Cert $leaf -FilePath $pfx -Password (ConvertTo-SecureString $passphrase -AsPlainText -Force) | Out-Null
+$leafPath=Join-Path $Directory 'warehouse-server.cer'
+Export-Certificate -Cert $leaf -FilePath $leafPath | Out-Null
 $ca=Join-Path $Directory 'warehouse-root-ca.cer'
 Export-Certificate -Cert $root -FilePath $ca | Out-Null
 if ($TrustLocally) { Import-Certificate -FilePath $ca -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null }
 # The return value is captured by the installer/test. Never display the passphrase.
-return @{PfxPath=$pfx;Passphrase=$passphrase;RootCertificate=$ca;RootThumbprint=$root.Thumbprint;LeafThumbprint=$leaf.Thumbprint}
+return @{PfxPath=$pfx;Passphrase=$passphrase;RootCertificate=$ca;LeafCertificate=$leafPath;RootThumbprint=$root.Thumbprint;LeafThumbprint=$leaf.Thumbprint}

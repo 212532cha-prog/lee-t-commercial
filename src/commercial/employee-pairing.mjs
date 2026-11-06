@@ -13,11 +13,15 @@ async function audit(db, userId, actorId, action) {
 }
 
 export class EmployeePairing {
-  constructor({ serverId, origin }) {
+  constructor({ serverId, origin, certificateFingerprint }) {
     if (!validId(serverId) || new URL(origin).protocol !== 'https:' || new URL(origin).origin !== origin) {
       throw Error('Pairing requires a server ID and an HTTPS origin.');
     }
+    if (certificateFingerprint !== undefined && !/^[a-f0-9]{64}$/.test(certificateFingerprint)) {
+      throw Error('Invalid warehouse server certificate fingerprint.');
+    }
     this.serverId = serverId;
+    this.certificateFingerprint = certificateFingerprint;
     this.origin = origin;
   }
 
@@ -46,7 +50,8 @@ export class EmployeePairing {
            RETURNING expires_at`, [userId, invitationId, this.serverId, digest(token)],
         );
         await audit(db, userId, admin.id, 'invited');
-        return { schema: 1, type, serverId: this.serverId, origin: this.origin, invitationId, token, expiresAt };
+        return { schema: 1, type, serverId: this.serverId, origin: this.origin, invitationId, token, expiresAt,
+          ...(this.certificateFingerprint && { certificateFingerprint: this.certificateFingerprint }) };
       }
       if (action === 'unbind') {
         await db.query('DELETE FROM employee_pairing_invites WHERE user_id=$1', [userId]);

@@ -13,10 +13,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.Arrays;
-import java.util.Locale;
 
 public class WarehouseActivity extends Activity {
     private static final int CAMERA_PERMISSION = 1;
@@ -24,28 +21,15 @@ public class WarehouseActivity extends Activity {
     private String warehouseOrigin;
     private PermissionRequest pendingCamera;
 
-    static String httpsOrigin(String address) {
-        if (address == null) return null;
-        try {
-            URI uri = new URI(address);
-            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null ||
-                uri.getRawUserInfo() != null || uri.getPort() == 0 || uri.getPort() > 65535) return null;
-            int port = uri.getPort() < 0 ? 443 : uri.getPort();
-            return uri.getHost().toLowerCase(Locale.ROOT) + ":" + port;
-        } catch (URISyntaxException error) {
-            return null;
-        }
-    }
-
     private boolean isWarehouse(String url) {
-        return warehouseOrigin.equals(httpsOrigin(url));
+        return warehouseOrigin.equals(WarehouseIdentityProbe.httpsOrigin(url));
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         String url = getIntent().getStringExtra("url");
-        warehouseOrigin = httpsOrigin(url);
+        warehouseOrigin = WarehouseIdentityProbe.httpsOrigin(url);
         if (warehouseOrigin == null) {
             finish();
             return;

@@ -1,8 +1,9 @@
 import { parsePairingQr, preparePairingSignIn, verifyPairingServer } from '../public/app/pairing.js';
 
-function nativeIdentityRequest(request) {
-  return async url => {
-    const response = await Promise.resolve().then(() => request({
+function nativeIdentityRequest(request, requestPinned) {
+  return async (url, { certificateFingerprint }) => {
+    if (certificateFingerprint && !requestPinned) throw Error('PAIRING_PIN_REQUIRED');
+    const response = await Promise.resolve().then(() => certificateFingerprint ? requestPinned({ url: url.href, certificateFingerprint }) : request({
       url: url.href, disableRedirects: true, connectTimeout: 5000, readTimeout: 5000,
       responseType: 'json', headers: { Accept: 'application/json' },
     })).catch(() => {
@@ -21,19 +22,19 @@ async function openWorkspace(open, url) {
   });
 }
 
-export async function launchPairing({ scan, request, open, remember = () => {}, now = Date.now }) {
+export async function launchPairing({ scan, request, requestPinned, open, remember = () => {}, now = Date.now }) {
   const result = await Promise.resolve().then(scan).catch(() => {
     throw Error('PAIRING_SCAN_FAILED');
   });
   if (!result?.ScanResult) return false;
-  const signIn = await preparePairingSignIn(result.ScanResult, { now, send: nativeIdentityRequest(request) });
-  const { origin, serverId } = parsePairingQr(signIn, { now: now() });
+  const signIn = await preparePairingSignIn(result.ScanResult, { now, send: nativeIdentityRequest(request, requestPinned) });
+  const { origin, serverId, certificateFingerprint } = parsePairingQr(signIn, { now: now() });
   await openWorkspace(open, signIn);
-  remember({ origin, serverId });
+  remember({ origin, serverId, ...(certificateFingerprint && { certificateFingerprint }) });
   return true;
 }
 
-export async function resumeWarehouse({ warehouse, request, open }) {
-  await verifyPairingServer(warehouse, nativeIdentityRequest(request));
+export async function resumeWarehouse({ warehouse, request, requestPinned, open }) {
+  await verifyPairingServer(warehouse, nativeIdentityRequest(request, requestPinned));
   await openWorkspace(open, new URL('/', warehouse.origin).href);
 }

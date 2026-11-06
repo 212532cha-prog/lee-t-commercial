@@ -94,6 +94,7 @@ if($HttpsHostname){
 }
 $config=@{ServiceName=$serviceName;AppRoot=$AppRoot;NodePath=$node;Environment=@{DATABASE_URL=$databaseUrl;PUBLIC_ORIGIN=$origin;DATA_DIR=$DataDir;APP_PORT=[string]$Port;APP_BIND='0.0.0.0';TLS_PFX_PATH=$certificate.PfxPath;TLS_PFX_PASSPHRASE=$certificate.Passphrase}}
 if($Commercial){
+ if($certificate.LeafCertificate){$config.Environment.LEE_T_PAIRING_CERT_PATH=$certificate.LeafCertificate}
  $activation=Join-Path $AppRoot 'activation'
  if(Test-Path -LiteralPath $activation){throw 'Activation staging already exists. Use the repair workflow.'}
  New-Item -ItemType Directory -Path $activation | Out-Null

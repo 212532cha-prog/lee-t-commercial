@@ -73,6 +73,8 @@ Windows安装/服务自启与关机重启；iPhone/Android无证书警告的摄�
 
 先为仓库预留 LAN IPv4，并准备一个自有域名的子域名。仓库 Wi-Fi 上的 DNS 必须把该主机名解析到这个 IPv4。可以用 DNS-01 验证签发公开受信任的证书，服务器继续只接受局域网连接。准备含私钥和中间证书链的 PFX，保留其密码，并安排续期。当前脚本验证和应用 PFX，证书签发和续期由部署方处理。
 
-新装时在测试安装器填写 HTTPS 主机名并选择 PFX，密码在 PowerShell 窗口输入。已有安装可先下载完整业务备份，再用管理员 PowerShell 运行 `Set-CommercialLanHttps.ps1`，传入现有服务的 `-ConfigPath`、预留的 `-Address`、`-HttpsHostname` 和 `-HttpsPfxPath`。它会预检 DNS 和证书，重启应用服务，并在新地址无法验证原仓库身份时恢复原配置。续期时可用同一脚本替换 PFX。
+这是部署人员选用公开证书时的配置。新装时可使用 PowerShell 安装脚本的 `-HttpsHostname` 和 `-HttpsPfxPath` 参数，密码在安装窗口输入。已有安装可先下载完整业务备份，再用管理员 PowerShell 运行 `Set-CommercialLanHttps.ps1`，传入现有服务的 `-ConfigPath`、预留的 `-Address`、`-HttpsHostname` 和 `-HttpsPfxPath`。它会预检 DNS 和证书，重启应用服务，并在新地址无法验证原仓库身份时恢复原配置。续期时可用同一脚本替换 PFX。
 
 使用新的 HTTPS 主机名打开后台，必要时解除测试员工的旧设备绑定并重新生成配对码。正式验收使用从未装过仓库 CA 的手机，在同一 Wi-Fi 扫码、登录、入库、出库、盘点。
+
+标准测试安装器自动选择 Windows 网络地址。如果当前唯一合适的网络为公用网络，安装窗口会要求确认是否信任该网络，并仅在确认后将其设为专用网络。员工配对码可携带服务器证书指纹，Android 配对探测会核对指纹和仓库身份。当前 App 内网页仍使用 Android 的证书信任，免装 CA 的完整业务流程仍待验收。

@@ -1,7 +1,7 @@
 import {resolve} from 'node:path';
 import {createSecureContext} from 'node:tls';
 import {createPool,migrate} from '../src/db/database.mjs';
-import {loadSettings,transport} from '../src/runtime/config.mjs';
+import {loadSettings,pairingCertificateFingerprint,transport} from '../src/runtime/config.mjs';
 import {AuthService} from '../src/auth/service.mjs';
 import {createAuthServer} from '../src/auth/http.mjs';
 import {CatalogService} from '../src/catalog/service.mjs';
@@ -28,7 +28,7 @@ try{
  if(process.argv.includes('--commercial')){
   let license;
   try{license=await requireLocalLicense(settings);}catch{throw Error('LEE_T_ACTIVATION_REQUIRED');}
-  pairing=new EmployeePairing({serverId:license.installationId,origin:settings.PUBLIC_ORIGIN});
+  pairing=new EmployeePairing({serverId:license.installationId,origin:settings.PUBLIC_ORIGIN,certificateFingerprint:await pairingCertificateFingerprint(settings)});
  }
  const listener=await transport(settings);if(listener.tls)createSecureContext(listener.tls);
  const discovery=discoveryConfig(settings,pairing,listener);

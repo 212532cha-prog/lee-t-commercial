@@ -33,7 +33,7 @@ if (!workspaceManifest.includes('android:name="android.permission.CAMERA"')) {
 }
 writeFileSync(manifestPath, workspaceManifest);
 const java = main + '/java/my/leet/warehouse';
-for (const name of ['MainActivity.java', 'WarehouseActivity.java', 'WarehouseWorkspacePlugin.java']) {
+for (const name of ['MainActivity.java', 'WarehouseActivity.java', 'WarehouseIdentityProbe.java', 'WarehouseWorkspacePlugin.java']) {
   copyFileSync('android-source/' + name, java + '/' + name);
 }
 mkdirSync(main + '/res/xml', { recursive: true });

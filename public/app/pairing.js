@@ -13,16 +13,18 @@ export function parsePairingFragment(fragment, { now = Date.now() } = {}) {
   } catch {
     throw Error('INVALID_PAIRING_LINK');
   }
-  const { schema, type, serverId, invitationId, token, expiresAt } = invitation;
+  const { schema, type, serverId, invitationId, token, expiresAt, certificateFingerprint } = invitation;
   if (schema !== 1 || type !== 'leet-local-pairing' || typeof serverId !== 'string' || !uuid.test(serverId) ||
       typeof invitationId !== 'string' || !uuid.test(invitationId) ||
       typeof token !== 'string' || !/^[\w-]{43}$/.test(token) ||
       origin.protocol !== 'https:' || origin.origin !== invitation.origin ||
+      (certificateFingerprint !== undefined && (typeof certificateFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(certificateFingerprint))) ||
       typeof expiresAt !== 'string' || !Number.isFinite(Date.parse(expiresAt))) {
     throw Error('INVALID_PAIRING_LINK');
   }
   if (Date.parse(expiresAt) <= now) throw Error('PAIRING_LINK_EXPIRED');
-  return { schema, type, serverId, invitationId, token, expiresAt, origin: origin.origin };
+  return { schema, type, serverId, invitationId, token, expiresAt, origin: origin.origin,
+    ...(certificateFingerprint && { certificateFingerprint }) };
 }
 
 export function parsePairingQr(text, options) {
@@ -41,16 +43,17 @@ export function parsePairingQr(text, options) {
   return invitation;
 }
 
-export async function verifyPairingServer({ origin, serverId }, send = fetch) {
+export async function verifyPairingServer({ origin, serverId, certificateFingerprint }, send = fetch) {
   const endpoint = new URL('/api/commercial/server-identity', origin);
-  if (endpoint.protocol !== 'https:' || endpoint.origin !== origin || !uuid.test(serverId)) {
+  if (endpoint.protocol !== 'https:' || endpoint.origin !== origin || !uuid.test(serverId) ||
+      (certificateFingerprint !== undefined && !/^[a-f0-9]{64}$/.test(certificateFingerprint))) {
     throw Error('INVALID_PAIRING_LINK');
   }
   const timeout = new AbortController();
   const timer = setTimeout(() => timeout.abort(), 5000);
   try {
     const identity = await send(endpoint, {
-      credentials: 'omit', redirect: 'error', cache: 'no-store', signal: timeout.signal,
+      credentials: 'omit', redirect: 'error', cache: 'no-store', signal: timeout.signal, certificateFingerprint,
     });
     if (!identity.ok) throw Error('PAIRING_SERVER_UNAVAILABLE');
     const server = await identity.json();

@@ -7,6 +7,7 @@ const resume = globalThis.document.querySelector('#resume');
 const storageKey = 'leet-verified-warehouse';
 const workspace = registerPlugin('WarehouseWorkspace');
 const request = options => CapacitorHttp.get(options);
+const requestPinned = options => workspace.verifyIdentity(options);
 const open = options => workspace.open(options);
 let warehouse;
 try { warehouse = JSON.parse(globalThis.localStorage.getItem(storageKey)); } catch { /* No saved warehouse. */ }
@@ -20,6 +21,7 @@ const pairingMessages = new Map([
   ['PAIRING_HTTPS_FAILED', 'The app could not connect over HTTPS. Check Wi-Fi and the warehouse CA certificate.'],
   ['PAIRING_SERVER_UNAVAILABLE', 'The warehouse identity endpoint returned an unexpected response.'],
   ['PAIRING_SERVER_MISMATCH', 'The server identity does not match this pairing code. Ask your administrator to check the server.'],
+  ['PAIRING_PIN_REQUIRED', 'Update LEE T Mobile to pair with this warehouse.'],
   ['PAIRING_WORKSPACE_FAILED', 'The warehouse was verified, but its workspace could not open.'],
 ]);
 if (!Capacitor.isNativePlatform()) {
@@ -38,6 +40,7 @@ button.addEventListener('click', async () => {
         scanInstructions: 'Scan the employee pairing QR code from your warehouse administrator.',
       }),
       request,
+      requestPinned,
       open,
       remember: verified => {
         warehouse = verified;
@@ -59,7 +62,7 @@ resume.addEventListener('click', async () => {
   resume.disabled = true;
   status.textContent = 'Verifying the warehouse…';
   try {
-    await resumeWarehouse({ warehouse, request, open });
+    await resumeWarehouse({ warehouse, request, requestPinned, open });
     status.textContent = '';
   } catch (error) {
     status.textContent = pairingMessages.get(error?.message) ?? 'Unable to open the warehouse.';

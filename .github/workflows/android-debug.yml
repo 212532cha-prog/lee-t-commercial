@@ -30,6 +30,8 @@ jobs:
           java-version: '21'
       - name: Test pairing and launcher
         run: node --test tests/commercial-mobile-pairing.test.mjs tests/commercial-android-launcher.test.mjs
+      - name: Exercise native pinned TLS probe against a real server
+        run: node mobile/test-identity-probe.mjs
       - name: Generate Android project
         working-directory: mobile
         run: |
