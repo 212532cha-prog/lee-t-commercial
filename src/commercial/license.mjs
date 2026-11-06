@@ -48,7 +48,7 @@ export function createDeviceRequest({ device, installationId = randomUUID() }) {
   return { schema: 1, product: PRODUCT, installationId, claims };
 }
 
-function validRequest(request) {
+export function validateDeviceRequest(request) {
   if (!isRecord(request) || request.schema !== 1 || request.product !== PRODUCT) fail('invalid activation request');
   nonempty(request.installationId, 'installationId');
   if (!isRecord(request.claims) || Object.keys(request.claims).sort().join(',') !== DEVICE_FIELDS.slice().sort().join(',')) fail('invalid device claims');
@@ -57,7 +57,7 @@ function validRequest(request) {
 
 /** Sign a license once the License Center has checked payment and redeemed the key. */
 export function issueLicense({ privateKeyPem, keyId, request, customerId, licenseId = randomUUID(), kind = 'initial', version, issuedAt = new Date().toISOString(), priorLicenseId = null }) {
-  validRequest(request);
+  validateDeviceRequest(request);
   nonempty(keyId, 'keyId');
   nonempty(customerId, 'customerId');
   nonempty(licenseId, 'licenseId');
@@ -84,7 +84,7 @@ function versionLeq(current, entitled) {
 /** A valid signature, same installation and >=2 matching hardware claims are required. */
 export function verifyLicense({ license, publicKeyPem, request, runningVersion, allowedKeyIds = undefined }) {
   try {
-    validRequest(request);
+    validateDeviceRequest(request);
     if (!isRecord(license) || !isRecord(license.payload) || typeof license.signature !== 'string' || !/^[\w-]{86}$/.test(license.signature)) fail('invalid license envelope');
     const p = license.payload;
     if (p.schema !== 1 || p.product !== PRODUCT) fail('wrong product');

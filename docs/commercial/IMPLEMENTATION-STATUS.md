@@ -13,7 +13,7 @@
 - `src/commercial/pairing.mjs`: mDNS service descriptor data and expiring, single-use pairing invitation primitives. NOT actual mDNS broadcasting, HTTP routing, TLS authentication or an employee app.
 - 13 new tests in `tests/commercial-*.test.mjs`.
 
-## NOT implemented / not yet production-ready
+## Open items at the v0.1 baseline
 
 1. Cloud Lee T License Center (production transactional DB, MFA, roles, secret key custody, tamper-evident logs, payment integration and authorization endpoints).
 2. Windows hardware fingerprint collection and persistent installation IDs; issuance API is not wired to the Warehouse server.
@@ -23,7 +23,7 @@
 6. Commercial Windows all-in-one installer and clean-machine acceptance testing.
 7. Commercial backup encryption/restore drills and real-device end-to-end testing.
 
-## Local test environment findings
+## v0.1 baseline test environment findings
 
 - Node.js installed: 22.16.0; project requires `^22.17.0 || >=24`, so runtime compliance is **not met**.
 - `npm ci --offline` failed because npm cache lacks `yocto-queue`; online `npm ci` did not finish in the available runtime. No dependence or test has been removed to work around that.
@@ -64,3 +64,36 @@ point.
 Windows hardware collection and the service account's access to hardware IDs
 still require target-machine verification. Online activation and production
 issuer deployment remain separate milestones.
+
+## PostgreSQL initial activation ledger
+
+The issuer can now issue initial activation codes in a separate PostgreSQL
+database and redeem them in transactions. The ledger stores code hashes,
+expiry, the signed result, and issuance/redemption audit events. Concurrent
+requests from different installations can issue only one license. A retry
+with the original request and code can retrieve the same signed result until
+the code expires, including after a lost response.
+
+This module requires a separate trusted issuer service. Its operator
+authentication, payment records, HTTPS endpoint, deployment, upgrade and
+transfer workflows are still pending.
+
+## Online initial activation development service
+
+`node scripts/start-activation-service.mjs` reads a protected JSON file at
+`LEE_T_ACTIVATION_SERVICE_CONFIG`. The file supplies `databaseUrl`,
+`tlsKeyPath`, `tlsCertPath`, `issuerKeyPath` and `issuerKeyId`. The default
+listener is `127.0.0.1:8443`; `bind` and `port` can be configured on the
+issuer host. Use a separate PostgreSQL database from the warehouse. Only the
+redemption route is exposed; payment confirmation and initial-code issuance
+are performed by trusted issuer code.
+
+On the customer server, configure `LEE_T_ACTIVATION_ORIGIN` as the trusted
+HTTPS origin for the redemption service. Pass the activation code through
+stdin to `node scripts/lee-t-license.mjs activate`. The client checks the
+issuer signature and the local device before saving the response. Following
+activation, startup validates the saved license locally.
+
+The issuer service is a development entry point. Admin MFA, customer and
+payment management, deployment protections, paid updates and transfers
+remain open.

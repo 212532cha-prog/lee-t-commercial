@@ -73,9 +73,12 @@ async function verifyLocalLicense(settings, license, readDevice) {
 }
 
 export async function installLocalLicense(settings, source, { readDevice } = {}) {
-  const serialized = await readFile(source, 'utf8');
-  const result = await verifyLocalLicense(settings, JSON.parse(serialized), readDevice);
-  await atomicWrite(join(licenseDirectory(settings), licenseFile), serialized, rename);
+  return storeLocalLicense(settings, JSON.parse(await readFile(source, 'utf8')), { readDevice });
+}
+
+export async function storeLocalLicense(settings, license, { readDevice } = {}) {
+  const result = await verifyLocalLicense(settings, license, readDevice);
+  await atomicWrite(join(licenseDirectory(settings), licenseFile), JSON.stringify(license), rename);
   return result;
 }
 
