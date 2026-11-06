@@ -339,5 +339,8 @@ registration and restart, migration, and application-role privileges.
 The commercial service installer calls this component when provided with
 the bundled PostgreSQL runtime and a dedicated cluster path. The database
 service runs as NetworkService while the warehouse service runs as LocalService.
+The installer copies the verified installation identity, license and public
+key into a service-readable directory, and makes the protected service
+configuration read-only for the warehouse service account.
 The customer wizard, executable packaging and end-to-end rollback validation
 remain open.

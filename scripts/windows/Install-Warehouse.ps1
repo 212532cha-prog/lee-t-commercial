@@ -77,12 +77,25 @@ $certificate=& (Join-Path $PSScriptRoot 'New-LanCertificate.ps1') -Address $Addr
 $origin='https://'+$Address+':'+$Port
 $config=@{ServiceName=$serviceName;AppRoot=$AppRoot;NodePath=$node;Environment=@{DATABASE_URL=$databaseUrl;PUBLIC_ORIGIN=$origin;DATA_DIR=$DataDir;APP_PORT=[string]$Port;APP_BIND='0.0.0.0';TLS_PFX_PATH=$certificate.PfxPath;TLS_PFX_PASSPHRASE=$certificate.Passphrase}}
 if($Commercial){
+ $activation=Join-Path $AppRoot 'activation'
+ if(Test-Path -LiteralPath $activation){throw 'Activation staging already exists. Use the repair workflow.'}
+ New-Item -ItemType Directory -Path $activation | Out-Null
+ foreach($name in @('installation-id','license.json')){
+  Copy-Item -LiteralPath (Join-Path $LicenseDir $name) -Destination (Join-Path $activation $name)
+ }
+ $installedPublicKey=Join-Path $activation 'issuer-public.pem'
+ Copy-Item -LiteralPath $IssuerPublicKeyPath -Destination $installedPublicKey
+ Protect-Directory $activation 'RX'
  $config.EntryScript='scripts/start-commercial.mjs'
- $config.Environment.LEE_T_LICENSE_DIR=$LicenseDir
- $config.Environment.LEE_T_ISSUER_PUBLIC_KEY_PATH=$IssuerPublicKeyPath
+ $config.Environment.LEE_T_LICENSE_DIR=$activation
+ $config.Environment.LEE_T_ISSUER_PUBLIC_KEY_PATH=$installedPublicKey
  $config.Environment.LEE_T_ISSUER_KEY_ID=$IssuerKeyId
 }
 [IO.File]::WriteAllText($configPath,($config|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
+if($Commercial){
+ & icacls.exe $configPath '/inheritance:r' '/grant:r' '*S-1-5-32-544:F' '*S-1-5-18:F' '*S-1-5-19:R' | Out-Null
+ if($LASTEXITCODE -ne 0){throw 'Cannot protect the commercial service configuration.'}
+}
 $executable=Join-Path $AppRoot 'WarehouseService.exe'
 & (Join-Path $PSScriptRoot 'Build-Service.ps1') -OutputPath $executable
 $start=[Diagnostics.ProcessStartInfo]::new($node,'"'+(Join-Path $AppRoot 'scripts\initialize-server.mjs')+'" --require-local-listener')
