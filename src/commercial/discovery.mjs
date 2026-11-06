@@ -95,14 +95,14 @@ export async function verifyWarehouseCandidate(service, paired, options) {
     return await Promise.any(addresses.map(async address => {
       const origin = await verifyWarehouseAddress(paired, address, options);
       if (!origin) throw Error('Unexpected server identity.');
-      return origin;
+      return options?.includeAddress ? { origin, address } : origin;
     }));
   } catch {
     return null;
   }
 }
 
-export function findWarehouse(paired, { options, timeoutMs = 6000, send = requestWarehouseIdentity } = {}) {
+export function findWarehouse(paired, { options, timeoutMs = 6000, send = requestWarehouseIdentity, includeAddress = false } = {}) {
   discoveryRecord(paired);
   if (!options?.interface) os.networkInterfaces();
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000) throw Error('Invalid discovery timeout.');
@@ -120,7 +120,7 @@ export function findWarehouse(paired, { options, timeoutMs = 6000, send = reques
     }
     timer = setTimeout(() => finish(null), timeoutMs);
     browser = bonjour.find({ type, protocol: 'tcp' }, service => {
-      verifyWarehouseCandidate(service, paired, { send, signal: controller.signal }).then(origin => {
+      verifyWarehouseCandidate(service, paired, { send, includeAddress, signal: controller.signal }).then(origin => {
         if (origin) finish(null, origin);
       }).catch(() => {}); // A candidate with bad TLS or identity is never selected.
     });

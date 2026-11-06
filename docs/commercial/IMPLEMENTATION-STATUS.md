@@ -237,3 +237,29 @@ provides the loopback address because this test environment does not
 expose host adapter enumeration. Address-change handling has a separate
 automated test. Windows and smartphone discovery on the actual LAN,
 including DHCP address change and AP isolation, still require field testing.
+
+### Collecting discovery evidence on the warehouse LAN
+
+On a Windows client on the same LAN, create `paired-server.json` with only
+the `serverId` and `origin` from the pairing record. Use the trusted HTTPS
+certificate setup for the site. If Node needs the site's CA, set
+`NODE_EXTRA_CA_CERTS` to the trusted CA PEM before starting the diagnostic.
+
+1. Run `node scripts/find-warehouse.mjs --json paired-server.json` and save
+   the output. Record the verified address as the baseline.
+2. After an authorized DHCP/address-change test, wait for the server to
+   refresh its advertisement. Run the same command again. Confirm
+   `verified: true`, the same HTTPS origin and the new address.
+3. With discovery unavailable, run
+   `node scripts/find-warehouse.mjs --json paired-server.json <server-ip>`.
+   Confirm that a successful manual check verifies the same origin and
+   the supplied address. A failed check exits with status 1 and provides
+   a reason without returning a verified address.
+4. Record separately the results of Windows and phone discovery, trusted
+   HTTPS, camera use and reconnect on the actual warehouse network. The
+   diagnostic report proves only the connection check from the machine
+   that ran it.
+
+The optional JSON output contains UTC time, discovery method, status and
+the verified HTTPS origin and address on success. It omits invitation
+tokens and device credentials. Existing text output remains available.

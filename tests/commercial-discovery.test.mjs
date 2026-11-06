@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execFile } from 'node:child_process';
 import { createSocket } from 'node:dgram';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os, { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { promisify } from 'node:util';
 import { createAuthServer } from '../src/auth/http.mjs';
 import { advertiseWarehouse, discoveryConfig, discoveryRecord, findWarehouse, maintainWarehouseAdvertisement, requestWarehouseIdentity, verifyWarehouseAddress, verifyWarehouseCandidate } from '../src/commercial/discovery.mjs';
 
@@ -71,7 +72,25 @@ test('real multicast DNS resolves a server only after certificate and HTTPS iden
   assert.equal(await findWarehouse(paired, { options, timeoutMs: 700, send: tlsRequest(cert) }), null);
   currentAddress = '127.0.0.2';
   advertisement = advertiseWarehouse(discoveryRecord(paired), { options });
-  assert.equal(await findWarehouse(paired, { options, send: tlsRequest(cert) }), paired.origin);
+  assert.deepEqual(await findWarehouse(paired, { options, send: tlsRequest(cert), includeAddress: true }), {
+    origin: paired.origin, address: '127.0.0.2',
+  });
+  const fixture = join(directory, 'paired-server.json');
+  await writeFile(fixture, JSON.stringify({ ...paired, token: 'unused-fixture-token' }));
+  const runDiagnostic = promisify(execFile);
+  const env = { ...process.env, NODE_EXTRA_CA_CERTS: certPath };
+  const args = ['scripts/find-warehouse.mjs', '--json', fixture, '127.0.0.2'];
+  const { stdout } = await runDiagnostic(process.execPath, args, { env });
+  const evidence = JSON.parse(stdout);
+  assert.equal(evidence.verified, true);
+  assert.equal(evidence.mode, 'manual-ip');
+  assert.equal(evidence.address, '127.0.0.2');
+  assert.equal(evidence.origin, paired.origin);
+  assert.ok(!stdout.includes('unused-fixture-token'));
+  await writeFile(fixture, JSON.stringify({ ...paired, serverId: randomUUID() }));
+  await assert.rejects(runDiagnostic(process.execPath, args, { env }), error =>
+    error.code === 1 && JSON.parse(error.stdout).verified === false && !JSON.parse(error.stdout).address);
+
 });
 
 
