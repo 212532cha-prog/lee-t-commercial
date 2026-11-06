@@ -46,3 +46,20 @@ test('Android launcher leaves browser closed on cancellation, bad QR, redirected
     }), /PAIRING_SERVER_UNAVAILABLE|PAIRING_SERVER_MISMATCH/);
   }
 });
+
+test('Android launcher reports the failed native step without exposing plugin error details', async () => {
+  const fail = async () => { throw Error(qr); };
+  const launcher = {
+    scan: async () => ({ ScanResult: qr }),
+    request: async ({ url }) => ({ status: 200, url, data: { schema: 1, serverId: invitation.serverId } }),
+    open: async () => {},
+    now: () => clock,
+  };
+  for (const [step, message] of [
+    ['scan', 'PAIRING_SCAN_FAILED'],
+    ['request', 'PAIRING_HTTPS_FAILED'],
+    ['open', 'PAIRING_BROWSER_FAILED'],
+  ]) {
+    await assert.rejects(launchPairing({ ...launcher, [step]: fail }), { message });
+  }
+});
