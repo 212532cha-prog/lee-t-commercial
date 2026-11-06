@@ -3,6 +3,7 @@ import {createCountUI} from './count.js';
 import {createBackupUI} from './backup.js';
 import {createStockUI} from './stock.js';
 import {createCatalogUI} from './catalog.js';
+import {parsePairingFragment} from './pairing.js';
 const $=s=>document.querySelector(s),escape=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let lang='zh',session=null,page='home',employees=[],flags={maintenance:false,adminBackupRequired:false};
 const dictionary={zh:{login:'登录',username:'用户名',"password":'密码',name:'真实姓名',home:'首页',team:'员工管理',logout:'退出登录',save:'保存',create:'新增员工',reset:'重设密码',disable:'停用',active:'启用中',inactive:'已停用',cancel:'取消',edit:'编辑',admin:'管理员',employee:'员工',failed:'操作失败，请重试',network:'无法连接服务器，请检查局域网后重试',replaced:'登录已失效或账号已在其他设备登录，请重新登录',invalid:'用户名或密码错误，或账号已停用',confirm:'确认停用该员工？未完成任务将退回待接受。',"newPassword":'新密码',done:'操作成功',products:'产品',inbound:'入库',outbound:'出库',count:'盘点',profile:'我的'},en:{login:'Sign in',username:'Username',"password":'Password',name:'Full name',home:'Home',team:'Team',logout:'Sign out',save:'Save',create:'Add employee',reset:'Reset password',disable:'Deactivate',active:'Active',inactive:'Inactive',cancel:'Cancel',edit:'Edit',admin:'Administrator',employee:'Employee',failed:'Operation failed. Please retry.',network:'Cannot reach the server. Check the LAN and retry.',replaced:'Session revoked or replaced by another device. Please sign in again.',invalid:'Invalid credentials or inactive account.',confirm:'Deactivate this employee? Unfinished task will return to pending.',"newPassword":'New password',done:'Saved successfully',products:'Products',inbound:'Stock in',outbound:'Stock out',count:'Stocktake',profile:'My account'},ms:{login:'Log masuk',username:'Nama pengguna',"password":'Kata laluan',name:'Nama penuh',home:'Utama',team:'Kakitangan',logout:'Log keluar',save:'Simpan',create:'Tambah kakitangan',reset:'Tetap semula kata laluan',disable:'Nyahaktif',active:'Aktif',inactive:'Tidak aktif',cancel:'Batal',edit:'Sunting',admin:'Pentadbir',employee:'Kakitangan',failed:'Operasi gagal. Cuba lagi.',network:'Pelayan tidak dapat dicapai. Semak LAN dan cuba lagi.',replaced:'Sesi dibatalkan atau diganti peranti lain. Sila log masuk semula.',invalid:'Butiran tidak sah atau akaun tidak aktif.',confirm:'Nyahaktif kakitangan ini? Tugasan belum selesai dikembalikan untuk diterima.',"newPassword":'Kata laluan baharu',done:'Berjaya disimpan',products:'Produk',inbound:'Stok masuk',outbound:'Stok keluar',count:'Kiraan stok',profile:'Akaun saya'}};
@@ -15,7 +16,7 @@ const pairingLabels={
 const t=k=>dictionary[lang][k]||extraLabels[lang][k]||pairingLabels[lang][k]||k;
 let pairingInvitation;
 if(location.hash.startsWith('#pairing=')){
- try{pairingInvitation=JSON.parse(decodeURIComponent(location.hash.slice(9)));}catch{/* Ignore malformed invitations. */}
+ try{pairingInvitation=parsePairingFragment(location.hash);}catch{/* Ignore malformed invitations. */}
  history.replaceState(null,'',location.pathname+location.search);
 }
 let serverOffset=0,connectionLost=false;

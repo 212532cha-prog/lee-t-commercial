@@ -264,3 +264,16 @@ certificate setup for the site. If Node needs the site's CA, set
 The optional JSON output contains UTC time, discovery method, status and
 the verified HTTPS origin and address on success. It omits invitation
 tokens and device credentials. Existing text output remains available.
+
+### Mobile pairing client foundation
+
+The browser and future mobile launcher share the QR invitation parser.
+It accepts only the versioned pairing format and a canonical HTTPS origin,
+validates IDs, token and expiry, and discards unknown fields. A launcher can
+use the preflight helper to verify the HTTPS server identity before opening
+the sign-in link. The preflight request sends neither the invitation nor
+credentials, follows no redirects, and checks expiry again before returning.
+
+Native Android/iOS launchers, camera integration, app signing and device
+acceptance remain open. The shared JavaScript module is exercised by the
+existing browser pairing flow and targeted parsing and identity tests.
