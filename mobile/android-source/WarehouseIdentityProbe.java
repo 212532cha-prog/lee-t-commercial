@@ -11,6 +11,7 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
@@ -42,15 +43,19 @@ final class WarehouseIdentityProbe {
         }
     }
 
-    static Response verify(String address, String fingerprint) throws Exception {
-        if (httpsOrigin(address) == null || fingerprint == null ||
-            !fingerprint.matches("[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("Invalid warehouse identity");
-        }
-        URI uri = new URI(address);
-        if (!"/api/commercial/server-identity".equals(uri.getRawPath()) ||
-            uri.getRawQuery() != null || uri.getRawFragment() != null) {
-            throw new IllegalArgumentException("Invalid warehouse identity endpoint");
+    static HttpsURLConnection open(URI uri, SSLSocketFactory sockets) throws Exception {
+        HttpsURLConnection connection = (HttpsURLConnection) uri.toURL().openConnection(java.net.Proxy.NO_PROXY);
+        connection.setSSLSocketFactory(sockets);
+        connection.setInstanceFollowRedirects(false);
+        connection.setUseCaches(false);
+        connection.setConnectTimeout(5000);
+        connection.setReadTimeout(5000);
+        return connection;
+    }
+
+    static SSLSocketFactory socketFactory(String fingerprint) throws Exception {
+        if (fingerprint == null || !fingerprint.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException("Invalid warehouse certificate fingerprint");
         }
         byte[] expected = new byte[32];
         for (int i = 0; i < expected.length; i++) {
@@ -84,13 +89,21 @@ final class WarehouseIdentityProbe {
         };
         SSLContext context = SSLContext.getInstance("TLS");
         context.init(null, new TrustManager[]{pinned}, null);
-        HttpsURLConnection connection = (HttpsURLConnection) uri.toURL().openConnection();
+        return context.getSocketFactory();
+    }
+
+    static Response verify(String address, String fingerprint) throws Exception {
+        if (httpsOrigin(address) == null || fingerprint == null ||
+            !fingerprint.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException("Invalid warehouse identity");
+        }
+        URI uri = new URI(address);
+        if (!"/api/commercial/server-identity".equals(uri.getRawPath()) ||
+            uri.getRawQuery() != null || uri.getRawFragment() != null) {
+            throw new IllegalArgumentException("Invalid warehouse identity endpoint");
+        }
+        HttpsURLConnection connection = open(uri, socketFactory(fingerprint));
         try {
-            connection.setSSLSocketFactory(context.getSocketFactory());
-            connection.setInstanceFollowRedirects(false);
-            connection.setUseCaches(false);
-            connection.setConnectTimeout(5000);
-            connection.setReadTimeout(5000);
             connection.setRequestProperty("Accept", "application/json");
             int status = connection.getResponseCode();
             String body = null;

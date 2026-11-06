@@ -33,9 +33,20 @@ if (!workspaceManifest.includes('android:name="android.permission.CAMERA"')) {
 }
 writeFileSync(manifestPath, workspaceManifest);
 const java = main + '/java/my/leet/warehouse';
-for (const name of ['MainActivity.java', 'WarehouseActivity.java', 'WarehouseIdentityProbe.java', 'WarehouseWorkspacePlugin.java']) {
+for (const name of ['MainActivity.java', 'WarehouseActivity.java', 'WarehouseIdentityProbe.java', 'WarehouseApiTransport.java', 'PinnedWorkspace.java', 'WarehouseWorkspacePlugin.java']) {
   copyFileSync('android-source/' + name, java + '/' + name);
 }
 mkdirSync(main + '/res/xml', { recursive: true });
 copyFileSync('network-security.xml', main + '/res/xml/leet_network_security.xml');
 run('sync', 'android');
+
+const workspaceAssets = main + '/assets/warehouse';
+mkdirSync(workspaceAssets + '/vendor', { recursive: true });
+mkdirSync(workspaceAssets + '/fonts', { recursive: true });
+for (const name of ['index.html', 'app.css', 'app.js', 'admin.js', 'backup.js', 'catalog.js', 'count.js',
+  'native-transport.js', 'pairing.js', 'qr-print.js', 'stock.js']) {
+  copyFileSync('../public/app/' + name, workspaceAssets + '/' + name);
+}
+copyFileSync('../node_modules/jsqr/dist/jsQR.js', workspaceAssets + '/vendor/jsqr.js');
+copyFileSync('../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2',
+  workspaceAssets + '/fonts/business-regular.woff2');

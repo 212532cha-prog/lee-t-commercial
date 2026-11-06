@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import QRCode from 'qrcode';
 import { identityPath } from '../commercial/discovery.mjs';
 import {AuthError} from './service.mjs';
-const assets=new Map([['/',['index.html','text/html; charset=utf-8']],['/app.js',['app.js','text/javascript; charset=utf-8']],['/app.css',['app.css','text/css; charset=utf-8']],['/pairing.js',['pairing.js','text/javascript; charset=utf-8']],['/catalog.js',['catalog.js','text/javascript; charset=utf-8']],['/qr-print.js',['qr-print.js','text/javascript; charset=utf-8']],['/stock.js',['stock.js','text/javascript; charset=utf-8']],['/backup.js',['backup.js','text/javascript; charset=utf-8']],['/count.js',['count.js','text/javascript; charset=utf-8']],['/admin.js',['admin.js','text/javascript; charset=utf-8']]]);
+const assets=new Map([['/',['index.html','text/html; charset=utf-8']],['/app.js',['app.js','text/javascript; charset=utf-8']],['/app.css',['app.css','text/css; charset=utf-8']],['/pairing.js',['pairing.js','text/javascript; charset=utf-8']],['/native-transport.js',['native-transport.js','text/javascript; charset=utf-8']],['/catalog.js',['catalog.js','text/javascript; charset=utf-8']],['/qr-print.js',['qr-print.js','text/javascript; charset=utf-8']],['/stock.js',['stock.js','text/javascript; charset=utf-8']],['/backup.js',['backup.js','text/javascript; charset=utf-8']],['/count.js',['count.js','text/javascript; charset=utf-8']],['/admin.js',['admin.js','text/javascript; charset=utf-8']]]);
 const uuid=/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
 const cookie=raw=>`__Host-warehouse_session=${raw}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=34560000`;
 const clearCookie=()=> '__Host-warehouse_session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0';

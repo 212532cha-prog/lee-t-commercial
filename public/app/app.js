@@ -4,6 +4,7 @@ import {createBackupUI} from './backup.js';
 import {createStockUI} from './stock.js';
 import {createCatalogUI} from './catalog.js';
 import {parsePairingFragment} from './pairing.js';
+import {warehouseFetch,warehouseEvents} from './native-transport.js';
 const $=s=>document.querySelector(s),escape=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const savedLanguage=sessionStorage.getItem('leet-language');
 let lang=['en','zh','ms'].includes(savedLanguage)?savedLanguage:'en',session=null,page='home',employees=[],flags={maintenance:false,adminBackupRequired:false};
@@ -24,7 +25,7 @@ let serverOffset=0,connectionLost=false;
 function message(s){$('#message').textContent=s;}
 async function api(path,{method='GET',data,raw,headers={},timeoutMs=path.startsWith('/api/backups')||path==='/api/maintenance'?600000:30000}={}){
  const caller=session?.csrf??null,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);let response,body;
- try{response=await fetch(path,{method,credentials:'same-origin',signal:controller.signal,headers:{...headers,...(data?{'Content-Type':'application/json'}:{}),...(method!=='GET'&&session?{'X-CSRF-Token':session.csrf}:{})},body:raw??(data?JSON.stringify(data):undefined)});body=await response.json();}catch{throw Error(t('network'));}finally{clearTimeout(timer);}
+ try{response=await warehouseFetch(path,{method,credentials:'same-origin',signal:controller.signal,headers:{...headers,...(data?{'Content-Type':'application/json'}:{}),...(method!=='GET'&&session?{'X-CSRF-Token':session.csrf}:{})},body:raw??(data?JSON.stringify(data):undefined)});body=await response.json();}catch{throw Error(t('network'));}finally{clearTimeout(timer);}
  if(path!=='/api/auth/login'&&caller!==(session?.csrf??null)){const changed=Error(t('replaced'));changed.code='SESSION_CHANGED';throw changed;}
  if(!response.ok){if(response.status===401)signedOut();const code=body.error;
   const stale=['METADATA_VERSION_CONFLICT','MASTER_VERSION_CONFLICT','PROFILE_VERSION_CONFLICT','BACKUP_CONFIG_VERSION_CONFLICT'].includes(code);
@@ -33,7 +34,7 @@ async function api(path,{method='GET',data,raw,headers={},timeoutMs=path.startsW
  return body;
 }
 const adminUI=createAdminUI({api,render,message,getSession:()=>session,getLang:()=>lang,escape,onPage:goPage,onProduct:async id=>{await goPage('products');await catalog.click({dataset:{catalog:'detail',id}});},onUser:user=>{session.user={...session.user,...user};render();},onSignedOut:signedOut});
-const count=createCountUI({api,render,message,getSession:()=>session,getLang:()=>lang,escape,onActive:id=>{flags.task=id?{id}:null;}});
+const count=createCountUI({api,render,message,getSession:()=>session,getLang:()=>lang,escape,connect:warehouseEvents,onActive:id=>{flags.task=id?{id}:null;}});
 const backup=createBackupUI({api,render,message,getSession:()=>session,getLang:()=>lang,escape,uploadFile,onRestored:signedOut});
 const stock=createStockUI({api,render,message,getSession:()=>session,getLang:()=>lang,escape});
 const catalog=createCatalogUI({api,request:api,render,message,getSession:()=>session,getLang:()=>lang,escape});

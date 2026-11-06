@@ -162,3 +162,62 @@ test('employee pairing controls display a QR and a fresh browser completes pairi
   delete auth.pairing;
  }
 });
+
+test('bundled Android workspace dispatches employee login, stock writes and live count events through its native bridge',async()=>{
+ const admin=await login();
+ const context=await browserFixture.browser.newContext({viewport:{width:390,height:844}});
+ contexts.push(context);
+ await context.addInitScript(()=>{
+  const streams=new Map();
+  const paths=[];
+  globalThis.nativePaths=paths;
+  globalThis.LeeTWarehouse={
+   async request(id,method,path,body,csrf){
+    paths.push(path);
+    try{
+     const headers={...(body!==null?{'Content-Type':'application/json'}:{}),...(csrf?{'X-CSRF-Token':csrf}:{})};
+     const response=await fetch(path,{method,headers,body:body??undefined});
+     globalThis.leetNativeReceive(id,'response',response.status,await response.text());
+    }catch{globalThis.leetNativeReceive(id,'error',0,'');}
+   },
+   events(id,path){
+    paths.push(path);
+    const stream=new globalThis.EventSource(path);
+    streams.set(id,stream);
+    stream.onmessage=event=>globalThis.leetNativeReceive(id,'event',0,event.data);
+    stream.onerror=()=>{stream.close();streams.delete(id);globalThis.leetNativeReceive(id,'error',0,'');};
+   },
+   closeEvents(id){streams.get(id)?.close();streams.delete(id);},
+  };
+ });
+ const page=await context.newPage();
+ page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base);
+ await page.locator('#language').selectOption('zh');
+ await page.locator('#username').fill('staff');
+ await page.locator('#password').fill(password);
+ await page.locator('#login button').click();
+ await page.locator('.workspace').waitFor();
+ const seed=new CatalogService(pool),token=(await seed.detail(p.id)).qrToken;
+ for(const direction of ['inbound','outbound']){
+  await nav(page,direction);
+  await scan(page,token,1);
+  await page.locator('[data-stock="commit"]').click();
+  await page.getByRole('heading',{name:'提交成功 · 更新后库存',exact:true}).waitFor();
+  assert.equal((await seed.detail(p.id)).quantity,direction==='inbound'?1:0);
+ }
+ await publish(admin,'App bridge count');
+ await nav(page,'count');
+ await page.locator('[data-count="accept"]').click();
+ await page.getByText('已连接，可以盘点',{exact:true}).waitFor();
+ for(const id of [p.id,q.id]){
+  await page.locator(`[data-count-quantity="${id}"]`).fill('0');
+  await page.locator(`[data-count-quantity="${id}"]`).press('Tab');
+ }
+ await page.locator('[data-count="submit"]').click();
+ await page.locator('.main-panel').getByText('报告已提交；报告数量不能修改。',{exact:true}).waitFor();
+ assert.equal((await seed.detail(p.id)).quantity,0);
+ const paths=await page.evaluate(()=>globalThis.nativePaths);
+ assert.ok(paths.includes('/api/auth/login'));
+ assert.ok(paths.some(path=>/^\/api\/count\/tasks\/[^/]+\/events\?/.test(path)));
+});

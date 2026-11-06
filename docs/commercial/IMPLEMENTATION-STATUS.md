@@ -281,11 +281,14 @@ JavaScript module is covered by parsing, identity and browser pairing tests.
 
 LEE T Mobile scans the employee invitation and verifies the server over
 trusted HTTPS before opening a dedicated in-app WebView. The workspace uses
-the existing warehouse screens and permissions for employee sign-in,
-receiving, dispatch and counts. The WebView limits top-level navigation and
-camera access to the verified HTTPS origin and exposes no Capacitor bridge
-to the warehouse pages. The launcher remembers only the server address and
-ID and verifies them again when the employee opens the warehouse later.
+the warehouse screens and permissions for employee sign-in, receiving,
+dispatch and counts. With a fingerprint-bearing pairing code, it loads
+packaged pages on a private WebView origin and sends business JSON, product
+photos and count events through a native TLS transport that checks the same
+fingerprint on each connection. The native cookie store keeps sessions out
+of the WebView. Only the device cookie is saved across app restarts, in app
+storage excluded from backup. Invitations and passwords are not persisted.
+Legacy invitations retain the system-trusted HTTPS path.
 
 From `mobile/`, run `npm ci` and `npm run android:prepare` to generate and sync
 the Android project. The project requires Android SDK 36 and a Gradle

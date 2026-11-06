@@ -9,6 +9,10 @@ import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import java.io.ByteArrayInputStream;
+import java.net.URI;
+import java.util.Collections;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -17,7 +21,9 @@ import java.util.Arrays;
 
 public class WarehouseActivity extends Activity {
     private static final int CAMERA_PERMISSION = 1;
+    private static final String LOCAL_ORIGIN = "https://appassets.androidplatform.net";
     private WebView workspace;
+    private PinnedWorkspace pinned;
     private String warehouseOrigin;
     private PermissionRequest pendingCamera;
 
@@ -35,8 +41,21 @@ public class WarehouseActivity extends Activity {
             return;
         }
 
-        // Keep the remote page in its own WebView without the Capacitor native bridge.
         workspace = new WebView(this);
+        String fingerprint = getIntent().getStringExtra("certificateFingerprint");
+        if (fingerprint != null) {
+            try {
+                URI endpoint = new URI(url);
+                String remoteOrigin = "https://" + endpoint.getRawAuthority();
+                pinned = new PinnedWorkspace(workspace, remoteOrigin, fingerprint);
+                workspace.addJavascriptInterface(pinned, "LeeTWarehouse");
+                warehouseOrigin = WarehouseIdentityProbe.httpsOrigin(LOCAL_ORIGIN);
+                url = LOCAL_ORIGIN + "/" + (endpoint.getRawFragment() == null ? "" : "#" + endpoint.getRawFragment());
+            } catch (Exception error) {
+                finish();
+                return;
+            }
+        }
         WebSettings settings = workspace.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -45,6 +64,16 @@ public class WarehouseActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         CookieManager.getInstance().setAcceptThirdPartyCookies(workspace, false);
         workspace.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                if (pinned == null) return null;
+                if (isWarehouse(request.getUrl().toString()) && "GET".equals(request.getMethod())) {
+                    return pinned.resource(URI.create(request.getUrl().toString()));
+                }
+                return new WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden",
+                    Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return !isWarehouse(request.getUrl().toString());
@@ -115,7 +144,9 @@ public class WarehouseActivity extends Activity {
     protected void onDestroy() {
         if (pendingCamera != null) pendingCamera.deny();
         pendingCamera = null;
+        if (pinned != null) pinned.close();
         if (workspace != null) {
+            workspace.removeJavascriptInterface("LeeTWarehouse");
             setContentView(new android.widget.FrameLayout(this));
             workspace.destroy();
         }

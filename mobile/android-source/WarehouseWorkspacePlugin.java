@@ -30,7 +30,8 @@ public class WarehouseWorkspacePlugin extends Plugin {
             return;
         }
         try {
-            getActivity().startActivity(new Intent(getActivity(), WarehouseActivity.class).putExtra("url", url));
+            getActivity().startActivity(new Intent(getActivity(), WarehouseActivity.class).putExtra("url", url)
+                .putExtra("certificateFingerprint", call.getString("certificateFingerprint")));
             call.resolve();
         } catch (RuntimeException error) {
             call.reject("Could not open the warehouse workspace");

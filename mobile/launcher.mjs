@@ -16,8 +16,8 @@ function nativeIdentityRequest(request, requestPinned) {
   };
 }
 
-async function openWorkspace(open, url) {
-  await Promise.resolve().then(() => open({ url })).catch(() => {
+async function openWorkspace(open, url, certificateFingerprint) {
+  await Promise.resolve().then(() => open({ url, ...(certificateFingerprint && { certificateFingerprint }) })).catch(() => {
     throw Error('PAIRING_WORKSPACE_FAILED');
   });
 }
@@ -29,12 +29,12 @@ export async function launchPairing({ scan, request, requestPinned, open, rememb
   if (!result?.ScanResult) return false;
   const signIn = await preparePairingSignIn(result.ScanResult, { now, send: nativeIdentityRequest(request, requestPinned) });
   const { origin, serverId, certificateFingerprint } = parsePairingQr(signIn, { now: now() });
-  await openWorkspace(open, signIn);
+  await openWorkspace(open, signIn, certificateFingerprint);
   remember({ origin, serverId, ...(certificateFingerprint && { certificateFingerprint }) });
   return true;
 }
 
 export async function resumeWarehouse({ warehouse, request, requestPinned, open }) {
   await verifyPairingServer(warehouse, nativeIdentityRequest(request, requestPinned));
-  await openWorkspace(open, new URL('/', warehouse.origin).href);
+  await openWorkspace(open, new URL('/', warehouse.origin).href, warehouse.certificateFingerprint);
 }

@@ -5,7 +5,8 @@ on:
     branches: [main]
     paths:
       - 'mobile/**'
-      - 'public/app/pairing.js'
+      - 'public/app/**'
+      - 'package-lock.json'
       - 'tests/commercial-android-launcher.test.mjs'
       - '.github/workflows/android-debug.yml'
   workflow_dispatch:
@@ -32,6 +33,8 @@ jobs:
         run: node --test tests/commercial-mobile-pairing.test.mjs tests/commercial-android-launcher.test.mjs
       - name: Exercise native pinned TLS probe against a real server
         run: node mobile/test-identity-probe.mjs
+      - name: Install locked warehouse web assets
+        run: npm ci --omit=dev --ignore-scripts
       - name: Generate Android project
         working-directory: mobile
         run: |
