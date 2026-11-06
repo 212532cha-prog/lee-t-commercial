@@ -21,7 +21,7 @@ try{
  $owned=$true
  if($result.ServiceName -ne $name -or (Test-Path (Join-Path $root 'init.private'))){throw 'Commercial PostgreSQL setup did not finalize correctly.'}
  $service=Get-CimInstance Win32_Service -Filter "Name='$name'"
- if($service.StartMode -ne 'Auto' -or $service.StartName -notmatch 'LocalService$'){throw 'Expected an automatic LocalService database service.'}
+ if($service.StartMode -ne 'Auto' -or $service.StartName -notmatch 'NetworkService$'){throw 'Expected an automatic NetworkService database service.'}
  Restart-Service $name
  $env:LEET_TEST_DATABASE_URL=$result.DatabaseUrl
  @'

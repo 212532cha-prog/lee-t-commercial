@@ -1,6 +1,6 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
-param([string]$AppRoot=([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))),[string]$DataDir,[string]$BackupPath1,[string]$BackupPath2,[string]$Address,[int]$Port=3443,[string]$PostgresService,[switch]$NoStart,[string]$BundledNodePath,[switch]$OfflineDependencies,[switch]$Commercial,[string]$LicenseDir,[string]$IssuerPublicKeyPath,[string]$IssuerKeyId)
+param([string]$AppRoot=([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))),[string]$DataDir,[string]$BackupPath1,[string]$BackupPath2,[string]$Address,[int]$Port=3443,[string]$PostgresService,[switch]$NoStart,[string]$BundledNodePath,[switch]$OfflineDependencies,[switch]$Commercial,[string]$LicenseDir,[string]$IssuerPublicKeyPath,[string]$IssuerKeyId,[string]$BundledPostgresDirectory,[string]$DatabaseClusterRoot)
 $ErrorActionPreference='Stop'
 function Read-PlainSecret([string]$Prompt) { $secure=Read-Host $Prompt -AsSecureString;$pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure);try{return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)}finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)} }
 function Protect-Directory([string]$Path,[string]$ServiceAccess) { New-Item -ItemType Directory -Path $Path -Force | Out-Null;& icacls.exe $Path '/inheritance:r' '/grant:r' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' ('*S-1-5-19:(OI)(CI)'+$ServiceAccess) '/C' | Out-Null;if($LASTEXITCODE -ne 0){throw 'Cannot apply required NTFS permissions.'} }
@@ -27,8 +27,15 @@ if(-not $adapter){throw 'Address does not belong to this computer.'}
 $network=Get-NetConnectionProfile -InterfaceIndex $adapter.InterfaceIndex
 if($network.NetworkCategory -ne 'Private'){throw 'Set only the trusted warehouse network to Private before installing.'}
 if($Port -lt 1024 -or $Port -gt 65535){throw 'Choose a port between 1024 and 65535.'}
-if(-not $PostgresService){$services=@(Get-Service 'postgresql*' -ErrorAction SilentlyContinue);if($services.Count -ne 1){throw 'Specify the dedicated PostgreSQL 17 service using -PostgresService.'};$PostgresService=$services[0].Name}
-if(-not (Get-Service $PostgresService -ErrorAction SilentlyContinue)){throw 'PostgreSQL service was not found.'}
+if($BundledPostgresDirectory){
+ if(-not $Commercial -or $PostgresService -or -not $DatabaseClusterRoot){throw 'Bundled PostgreSQL requires commercial mode, a dedicated cluster path and no existing database service argument.'}
+ $clusterFull=[IO.Path]::GetFullPath($DatabaseClusterRoot).TrimEnd('\')
+ foreach($other in (@($AppRoot,$DataDir,$LicenseDir,$BackupPath1,$BackupPath2) | Where-Object { $_ })){
+  $otherFull=[IO.Path]::GetFullPath($other).TrimEnd('\')
+  if($clusterFull -eq $otherFull -or $clusterFull.StartsWith($otherFull+'\',[StringComparison]::OrdinalIgnoreCase) -or $otherFull.StartsWith($clusterFull+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Keep the bundled database cluster in a separate directory.'}
+ }
+}elseif(-not $PostgresService){$services=@(Get-Service 'postgresql*' -ErrorAction SilentlyContinue);if($services.Count -ne 1){throw 'Specify the dedicated PostgreSQL 17 service using -PostgresService.'};$PostgresService=$services[0].Name}
+if(-not $BundledPostgresDirectory -and -not (Get-Service $PostgresService -ErrorAction SilentlyContinue)){throw 'PostgreSQL service was not found.'}
 if($BundledNodePath){
  if(-not [IO.Path]::IsPathRooted($BundledNodePath) -or -not (Test-Path -LiteralPath $BundledNodePath -PathType Leaf)){throw 'Bundled Node executable was not found.'}
  $node=[IO.Path]::GetFullPath($BundledNodePath)
@@ -56,8 +63,16 @@ if(-not $OfflineDependencies){
  try{& $npm ci --omit=dev --ignore-scripts;if($LASTEXITCODE -ne 0){throw 'Dependency installation failed.'}}finally{Pop-Location}
 }
 foreach($backupPath in (@($BackupPath1,$BackupPath2) | Where-Object { $_ })){New-Item -ItemType Directory -Path $backupPath -Force | Out-Null;& icacls.exe $backupPath '/grant:r' '*S-1-5-19:(OI)(CI)M' | Out-Null;if($LASTEXITCODE -ne 0){throw 'Cannot grant backup directory access to LocalService.'}}
-$databaseUrl=Read-PlainSecret 'Dedicated local PostgreSQL connection URL (not the database administrator account)'
-$initial=Read-PlainSecret 'Initial CTL LEE password (use the agreed initial password)'
+$initial=Read-PlainSecret 'Initial CTL LEE password'
+$database=$null
+try{
+ if($BundledPostgresDirectory){
+  $database=& (Join-Path $PSScriptRoot 'Initialize-CommercialPostgres.ps1') -PostgresDirectory $BundledPostgresDirectory -ClusterRoot $DatabaseClusterRoot
+  $PostgresService=$database.ServiceName
+  $databaseUrl=$database.DatabaseUrl
+ }else{
+  $databaseUrl=Read-PlainSecret 'Dedicated local PostgreSQL connection URL (not the database administrator account)'
+ }
 $certificate=& (Join-Path $PSScriptRoot 'New-LanCertificate.ps1') -Address $Address -Directory (Join-Path $DataDir 'tls') -TrustLocally
 $origin='https://'+$Address+':'+$Port
 $config=@{ServiceName=$serviceName;AppRoot=$AppRoot;NodePath=$node;Environment=@{DATABASE_URL=$databaseUrl;PUBLIC_ORIGIN=$origin;DATA_DIR=$DataDir;APP_PORT=[string]$Port;APP_BIND='0.0.0.0';TLS_PFX_PATH=$certificate.PfxPath;TLS_PFX_PASSPHRASE=$certificate.Passphrase}}
@@ -84,3 +99,19 @@ if(-not $NoStart){Start-Service $serviceName}
 Write-Output ('Installed service. LAN address: '+$origin)
 Write-Output ('Install and trust this public root certificate on each phone: '+$certificate.RootCertificate)
 Write-Output 'Phone/HID, actual shutdown/reboot, external storage and new-computer restore still require the acceptance checklist. Do not open router/public ports.'
+
+}catch{
+ if($database -and -not (Get-Service $serviceName -ErrorAction SilentlyContinue)){
+  Stop-Service -Name $database.ServiceName -Force -ErrorAction SilentlyContinue
+  $dbService=Get-Service -Name $database.ServiceName -ErrorAction SilentlyContinue
+  if($dbService.Status -eq 'Stopped'){
+   & (Join-Path $BundledPostgresDirectory 'bin\pg_ctl.exe') unregister -N $database.ServiceName | Out-Null
+   if($LASTEXITCODE -eq 0){Remove-Item -LiteralPath $DatabaseClusterRoot -Recurse -Force}
+  }
+ }
+ throw
+}finally{
+ $initial=$null
+ $databaseUrl=$null
+ $database=$null
+}

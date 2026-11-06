@@ -336,5 +336,8 @@ to the installer for protected configuration and must not be logged.
 
 The Windows native CI check exercises occupied-port refusal, service
 registration and restart, migration, and application-role privileges.
-The customer wizard still needs to call this component and handle rollback
-across activation, database provisioning and application service setup.
+The commercial service installer calls this component when provided with
+the bundled PostgreSQL runtime and a dedicated cluster path. The database
+service runs as NetworkService while the warehouse service runs as LocalService.
+The customer wizard, executable packaging and end-to-end rollback validation
+remain open.
