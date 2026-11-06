@@ -240,8 +240,9 @@ including DHCP address change and AP isolation, still require field testing.
 
 ### Collecting discovery evidence on the warehouse LAN
 
-On a Windows client on the same LAN, create `paired-server.json` with only
-the `serverId` and `origin` from the pairing record. Use the trusted HTTPS
+In the commercial administrator’s Team page, select **Download LAN diagnostic
+configuration** to obtain `paired-server.json`. It contains only the server
+ID and configured HTTPS origin. Copy it to the Windows client on the same LAN. Use the trusted HTTPS
 certificate setup for the site. If Node needs the site's CA, set
 `NODE_EXTRA_CA_CERTS` to the trusted CA PEM before starting the diagnostic.
 

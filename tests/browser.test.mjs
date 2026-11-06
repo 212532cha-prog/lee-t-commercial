@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createServer,request} from 'node:http';
 import {once} from 'node:events';
 import {randomUUID} from 'node:crypto';
-import {mkdtemp,mkdir,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,rm,readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {testPool} from './helpers/database.mjs';
@@ -121,6 +121,11 @@ test('employee pairing controls display a QR and a fresh browser completes pairi
  auth.pairing=pairing;
  try{
   const admin=await login();await nav(admin,'team');
+  const downloadEvent=admin.waitForEvent('download');
+  await admin.locator('a[href="/api/commercial/diagnostic-config"]').click();
+  const download=await downloadEvent;
+  assert.equal(download.suggestedFilename(),'paired-server.json');
+  assert.deepEqual(JSON.parse(await readFile(await download.path(),'utf8')),{serverId:pairing.serverId,origin:pairing.origin});
   const issuance=admin.waitForResponse(response=>response.url().endsWith('/pairing/invite'));
   await admin.locator('[data-pairing="invite"]').click();
   const {invitation}=await (await issuance).json();

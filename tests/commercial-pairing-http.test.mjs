@@ -55,6 +55,11 @@ test('commercial QR enrollment verifies employees, binds one device and revokes 
   assert.equal((await login(employee)).body.error, 'EMPLOYEE_PAIRING_REQUIRED');
   assert.equal((await manage('invite', '', '')).status, 401);
   assert.equal((await manage('invite', sessionCookie(admin.token), 'bad')).status, 403);
+  const configPath = '/api/commercial/diagnostic-config';
+  assert.equal((await request(configPath)).status, 401);
+  const config = await request(configPath, { cookie: sessionCookie(admin.token) });
+  assert.equal(config.status, 200);
+  assert.deepEqual(config.body, { serverId: pairing.serverId, origin });
   const expired = await manage('invite');
   await pool.query("UPDATE employee_pairing_invites SET expires_at=now()-interval '1 second'");
   assert.equal((await login({ ...employee, invitation: expired.body.invitation })).status, 403);
@@ -79,6 +84,7 @@ test('commercial QR enrollment verifies employees, binds one device and revokes 
   assert.equal((await me(browserCookies.join('; '))).status, 200);
   assert.equal((await me(browserCookies.find(value => value.startsWith('__Host-warehouse_session=')))).status, 401);
   assert.equal((await manage('unbind', browserCookies.join('; '), paired.body.csrf)).status, 403);
+  assert.equal((await request(configPath, { cookie: browserCookies.join('; ') })).status, 403);
   assert.equal((await manage('invite')).body.error, 'EMPLOYEE_ALREADY_PAIRED');
   assert.equal((await login(employee)).body.error, 'EMPLOYEE_DEVICE_NOT_AUTHORIZED');
   assert.equal((await login(employee, device)).status, 200);

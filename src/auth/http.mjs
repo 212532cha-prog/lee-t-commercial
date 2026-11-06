@@ -45,6 +45,11 @@ export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=
    if(req.method==='GET'&&url==='/api/state'){const a=await auth.authorize(raw,{sessionOnly:true});const flags=(await auth.pool.query('SELECT maintenance,admin_backup_required,clock_timestamp() AS server_time FROM system_settings WHERE id=1')).rows[0];const task=a.user.role==='employee'?(await auth.pool.query("SELECT id,run_generation FROM count_tasks WHERE assigned_user_id=$1 AND status='active'",[a.user.id])).rows[0]:null;json(res,200,{serverTime:flags.server_time,maintenance:flags.maintenance,adminBackupRequired:a.user.role==='admin'&&flags.admin_backup_required,task:task?{id:task.id,generation:String(task.run_generation)}:null});return;}
    if(req.method==='POST'&&url==='/api/auth/logout'){await auth.authorize(raw,{write:true,csrf,sessionOnly:true});await auth.logout(raw);res.setHeader('Set-Cookie',clearCookie());json(res,200,{ok:true});return;}
    if(req.method==='POST'&&url==='/api/me/password'){const a=await auth.authorize(raw,{admin:true,write:true,csrf});const input=await body(req);await auth.changeAdminPassword(a.user.id,input.oldPassword,input.newPassword,{raw,csrf});res.setHeader('Set-Cookie',clearCookie());json(res,200,{ok:true,requiresLogin:true});return;}
+   if(auth.pairing&&req.method==='GET'&&url==='/api/commercial/diagnostic-config'){
+    await auth.authorize(raw,{admin:true});
+    res.setHeader('Content-Disposition','attachment; filename="paired-server.json"');
+    json(res,200,{serverId:auth.pairing.serverId,origin:auth.pairing.origin});return;
+   }
    if(url==='/api/employees'&&req.method==='GET'){await auth.authorize(raw,{admin:true});json(res,200,{employees:await auth.employees()});return;}
    if(url==='/api/employees'&&req.method==='POST'){await auth.authorize(raw,{admin:true,write:true,csrf});json(res,201,{employee:await auth.createEmployee(await body(req),{raw,csrf})});return;}
    const pairingMatch=url.match(/^\/api\/employees\/([^/]+)\/pairing\/(invite|unbind|signout)$/);
