@@ -1,4 +1,6 @@
 import os from 'node:os';
+import { request } from 'node:https';
+import { isIP } from 'node:net';
 import Bonjour from 'bonjour-service';
 import { makeDiscoveryRecord } from './pairing.mjs';
 
@@ -43,38 +45,82 @@ export function advertiseWarehouse(record, { options, onError = () => {} } = {})
   }
 }
 
-export async function verifyWarehouseCandidate(service, paired, { send = fetch } = {}) {
+// Connect to the advertised address while keeping the paired HTTPS hostname for SNI and certificate checks.
+export function requestWarehouseIdentity(url, { address, signal, ca } = {}) {
+  const family = isIP(address ?? '');
+  return new Promise((resolve, reject) => {
+    const req = request(url, {
+      agent: false, signal, ca,
+      ...(family && { family, lookup: (_hostname, _options, callback) => callback(null, address, family) }),
+    }, res => {
+      const chunks = [];
+      let size = 0;
+      res.on('error', reject);
+      res.on('data', chunk => {
+        size += chunk.length;
+        if (size > 4096) res.destroy(Error('Server identity response is too large.'));
+        else chunks.push(chunk);
+      });
+      res.on('end', () => resolve({
+        ok: res.statusCode === 200,
+        json: () => JSON.parse(Buffer.concat(chunks).toString('utf8')),
+      }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+export async function verifyWarehouseAddress(paired, address, { send = requestWarehouseIdentity, signal } = {}) {
+  discoveryRecord(paired);
+  if (!isIP(address ?? '')) throw Error('A valid server IP address is required.');
+  const timeout = AbortSignal.timeout(5000);
+  const response = await send(new URL(identityPath, paired.origin), {
+    address, signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
+  if (!response.ok) return null;
+  const identity = await response.json();
+  return identity?.schema === 1 && identity.serverId === paired.serverId ? paired.origin : null;
+}
+
+export async function verifyWarehouseCandidate(service, paired, options) {
   const record = discoveryRecord(paired);
   if (service?.type !== type || service.protocol !== 'tcp' ||
       service.txt?.v !== '1' || service.txt.id !== record.serverId ||
       service.host?.toLowerCase().replace(/\.$/, '') !== record.host || service.port !== record.port) {
     return null;
   }
-  const response = await send(new URL(identityPath, paired.origin), {
-    redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(5000),
-  });
-  if (!response.ok) return null;
-  const identity = await response.json();
-  return identity.schema === 1 && identity.serverId === record.serverId ? paired.origin : null;
+  const addresses = [...new Set((service.addresses ?? []).filter(address => isIP(address)))].slice(0, 8);
+  try {
+    return await Promise.any(addresses.map(async address => {
+      const origin = await verifyWarehouseAddress(paired, address, options);
+      if (!origin) throw Error('Unexpected server identity.');
+      return origin;
+    }));
+  } catch {
+    return null;
+  }
 }
 
-export function findWarehouse(paired, { options, timeoutMs = 6000, send = fetch } = {}) {
+export function findWarehouse(paired, { options, timeoutMs = 6000, send = requestWarehouseIdentity } = {}) {
   discoveryRecord(paired);
   if (!options?.interface) os.networkInterfaces();
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000) throw Error('Invalid discovery timeout.');
   return new Promise((resolve, reject) => {
     let browser, timer, finished = false;
+    const controller = new AbortController();
     const bonjour = new Bonjour(options, error => finish(error));
     function finish(error, origin) {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
+      controller.abort();
       browser?.stop();
       bonjour.destroy(() => error ? reject(error) : resolve(origin ?? null));
     }
     timer = setTimeout(() => finish(null), timeoutMs);
     browser = bonjour.find({ type, protocol: 'tcp' }, service => {
-      verifyWarehouseCandidate(service, paired, { send }).then(origin => {
+      verifyWarehouseCandidate(service, paired, { send, signal: controller.signal }).then(origin => {
         if (origin) finish(null, origin);
       }).catch(() => {}); // A candidate with bad TLS or identity is never selected.
     });

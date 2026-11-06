@@ -222,14 +222,17 @@ change and withdraws the advertisement on graceful shutdown.
 The diagnostic client can read a JSON file containing the paired
 `serverId` and `origin` with
 `node scripts/find-warehouse.mjs paired-server.json`. It only probes the
-paired HTTPS origin when the DNS-SD identity, host and port match. It
-rejects certificate failures, mismatched HTTPS identities and redirects.
+paired HTTPS origin when the DNS-SD identity, host and port match. It connects
+to the advertised IP while keeping the paired hostname for TLS certificate
+validation, so a stale OS DNS entry does not redirect the probe. It rejects
+certificate failures, mismatched HTTPS identities and redirects.
 Discovery is a convenience for an already paired client. It grants no
-employee access. If discovery fails, use the originally paired HTTPS
-address and check LAN multicast and certificate trust.
+employee access. If discovery fails, append the server IP to the diagnostic
+command to verify it directly using the same paired hostname and certificate
+checks. The tool prints the paired HTTPS origin on success.
 
 The automated discovery test exchanges real UDP multicast packets on
-loopback and verifies HTTPS using a test certificate. An adapter fixture
+loopback and verifies HTTPS before and after an advertised IP change using a test certificate. An adapter fixture
 provides the loopback address because this test environment does not
 expose host adapter enumeration. Address-change handling has a separate
 automated test. Windows and smartphone discovery on the actual LAN,

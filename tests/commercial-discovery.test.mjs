@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { request } from 'node:https';
 import { createSocket } from 'node:dgram';
 import { once } from 'node:events';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -9,11 +8,11 @@ import os, { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createAuthServer } from '../src/auth/http.mjs';
-import { advertiseWarehouse, discoveryConfig, discoveryRecord, findWarehouse, maintainWarehouseAdvertisement, verifyWarehouseCandidate } from '../src/commercial/discovery.mjs';
+import { advertiseWarehouse, discoveryConfig, discoveryRecord, findWarehouse, maintainWarehouseAdvertisement, requestWarehouseIdentity, verifyWarehouseAddress, verifyWarehouseCandidate } from '../src/commercial/discovery.mjs';
 
 test('discovery ignores mismatched IDs, hosts and ports before attempting HTTPS', async () => {
   const paired = { serverId: randomUUID(), origin: 'https://warehouse.local:3443' };
-  const service = { type: 'leet-warehouse', protocol: 'tcp', host: 'warehouse.local', port: 3443, txt: { id: paired.serverId, v: '1' } };
+  const service = { type: 'leet-warehouse', protocol: 'tcp', host: 'warehouse.local', port: 3443, addresses: ['127.0.0.1'], txt: { id: paired.serverId, v: '1' } };
   for (const candidate of [{ ...service, host: 'other.local' }, { ...service, port: 443 }, { ...service, txt: { id: randomUUID(), v: '1' } }]) {
     assert.equal(await verifyWarehouseCandidate(candidate, paired, { send: () => assert.fail('Must not connect to spoofed candidate') }), null);
   }
@@ -40,7 +39,7 @@ test('real multicast DNS resolves a server only after certificate and HTTPS iden
   const [key, cert] = await Promise.all([readFile(keyPath), readFile(certPath)]);
   const serverId = randomUUID();
   server = createAuthServer({ auth: { pairing: { serverId } }, publicOrigin: 'https://' + host, tls: { key, cert } });
-  server.listen(0, '127.0.0.1');
+  server.listen(0, '0.0.0.0');
   await once(server, 'listening');
   const paired = { serverId, origin: 'https://' + host + ':' + server.address().port };
   const socket = createSocket('udp4');
@@ -48,21 +47,14 @@ test('real multicast DNS resolves a server only after certificate and HTTPS iden
   await once(socket, 'listening');
   const options = { port: socket.address().port, interface: '127.0.0.1', bind: '0.0.0.0' };
   await new Promise(resolve => socket.close(resolve));
-  const tlsRequest = ca => url => new Promise((resolve, reject) => {
+  let currentAddress = '127.0.0.1';
+  const tlsRequest = ca => (url, options) => {
     assert.equal(url.hostname, host);
-    const req = request(url, {
-      ca, agent: false, family: 4,
-      lookup: (_name, _opts, cb) => cb(null, '127.0.0.1', 4),
-    }, res => {
-      const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => resolve(new Response(Buffer.concat(chunks), { status: res.statusCode })));
-    });
-    req.on('error', reject);
-    req.end();
-  });
+    assert.equal(options.address, currentAddress);
+    return requestWarehouseIdentity(url, { ...options, ca });
+  };
   // Use a fixed loopback interface fixture while exchanging real multicast packets.
-  t.mock.method(os, 'networkInterfaces', () => ({ test: [{ address: '127.0.0.1', family: 'IPv4', internal: false, mac: '02:00:00:00:00:01' }] }));
+  t.mock.method(os, 'networkInterfaces', () => ({ test: [{ address: currentAddress, family: 'IPv4', internal: false, mac: '02:00:00:00:00:01' }] }));
   advertisement = advertiseWarehouse(discoveryRecord(paired), { options });
   const [verified, untrusted, unrelated] = await Promise.all([
     findWarehouse(paired, { options, timeoutMs: 6500, send: tlsRequest(cert) }),
@@ -72,8 +64,14 @@ test('real multicast DNS resolves a server only after certificate and HTTPS iden
   assert.equal(verified, paired.origin);
   assert.equal(untrusted, null);
   assert.equal(unrelated, null);
+  assert.equal(await verifyWarehouseAddress(paired, '127.0.0.1', { send: tlsRequest(cert) }), paired.origin);
+  await assert.rejects(verifyWarehouseAddress(paired, '127.0.0.1', { send: tlsRequest() }));
+  await assert.rejects(verifyWarehouseAddress(paired, 'https://other.local'), /valid server IP/);
   await advertisement.close();
   assert.equal(await findWarehouse(paired, { options, timeoutMs: 700, send: tlsRequest(cert) }), null);
+  currentAddress = '127.0.0.2';
+  advertisement = advertiseWarehouse(discoveryRecord(paired), { options });
+  assert.equal(await findWarehouse(paired, { options, send: tlsRequest(cert) }), paired.origin);
 });
 
 

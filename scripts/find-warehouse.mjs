@@ -1,11 +1,12 @@
 import { readFile } from 'node:fs/promises';
-import { findWarehouse } from '../src/commercial/discovery.mjs';
+import { findWarehouse, verifyWarehouseAddress } from '../src/commercial/discovery.mjs';
 
 try {
-  const [file, ...extra] = process.argv.slice(2);
-  if (!file || extra.length) throw Error('Usage: node scripts/find-warehouse.mjs <paired-server.json>');
+  const [file, address, ...extra] = process.argv.slice(2);
+  if (!file || extra.length) throw Error('Usage: node scripts/find-warehouse.mjs <paired-server.json> [server-ip]');
   const { serverId, origin } = JSON.parse(await readFile(file, 'utf8'));
-  const found = await findWarehouse({ serverId, origin });
+  const paired = { serverId, origin };
+  const found = address ? await verifyWarehouseAddress(paired, address) : await findWarehouse(paired);
   if (found) {
     console.log(found);
   } else {
