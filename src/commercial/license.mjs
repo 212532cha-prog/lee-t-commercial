@@ -71,7 +71,9 @@ export function issueLicense({ privateKeyPem, keyId, request, customerId, licens
     entitledVersion: version, issuedAt, priorLicenseId,
     installationId: request.installationId, deviceClaims: clone(request.claims),
   };
-  const signature = sign(null, Buffer.from(canonical(payload)), createPrivateKey(privateKeyPem)).toString('base64url');
+  const privateKey = createPrivateKey(privateKeyPem);
+  if (privateKey.asymmetricKeyType !== 'ed25519') fail('issuer must use Ed25519');
+  const signature = sign(null, Buffer.from(canonical(payload)), privateKey).toString('base64url');
   return { payload, signature };
 }
 
@@ -96,7 +98,9 @@ export function verifyLicense({ license, publicKeyPem, request, runningVersion, 
     if (!/^\d+\.\d+\.\d+$/.test(p.entitledVersion) || !/^\d+\.\d+\.\d+$/.test(runningVersion)) fail('invalid version');
     if (allowedKeyIds !== undefined && (!Array.isArray(allowedKeyIds) || !allowedKeyIds.includes(p.keyId))) fail('unknown signing key');
     const signature = Buffer.from(license.signature, 'base64url');
-    if (signature.length !== 64 || !verify(null, Buffer.from(canonical(p)), createPublicKey(publicKeyPem), signature)) fail('signature mismatch');
+    const publicKey = createPublicKey(publicKeyPem);
+    if (publicKey.asymmetricKeyType !== 'ed25519') fail('issuer must use Ed25519');
+    if (signature.length !== 64 || !verify(null, Buffer.from(canonical(p)), publicKey, signature)) fail('signature mismatch');
     if (p.installationId !== request.installationId) fail('different installation');
     if (!isRecord(p.deviceClaims)) fail('missing device claims');
     const matching = DEVICE_FIELDS.filter(field => p.deviceClaims[field] === request.claims[field]).length;

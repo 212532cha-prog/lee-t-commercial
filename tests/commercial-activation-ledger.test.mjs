@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
 import { createInitialActivationCode, initializeActivationLedger, redeemInitialActivationCode } from '../src/commercial/activation-ledger.mjs';
 import { createDeviceRequest, generateIssuerKeyPair, verifyLicense } from '../src/commercial/license.mjs';
@@ -17,6 +18,8 @@ test('transactional initial activation is atomic across workers and retryable on
   const second = createDeviceRequest({ device });
   await assert.rejects(redeemInitialActivationCode(pool, { code, request: {} }, issuer), { code: 'INVALID_ACTIVATION_CODE' });
   await assert.rejects(redeemInitialActivationCode(pool, { code, request: first }, { ...issuer, privateKeyPem: '' }));
+  const wrongKey = generateKeyPairSync('ed448').privateKey.export({ format: 'pem', type: 'pkcs8' });
+  await assert.rejects(redeemInitialActivationCode(pool, { code, request: first }, { ...issuer, privateKeyPem: wrongKey }), /issuer must use Ed25519/);
   const contenders = await Promise.allSettled([
     redeemInitialActivationCode(pool, { code, request: first }, issuer),
     redeemInitialActivationCode(pool, { code, request: second }, issuer),
