@@ -208,3 +208,29 @@ supersession, pending device-bound transfer, signing and retry behavior.
 Production backup automation, secure key recovery, off-host retention and
 cloud recovery acceptance still require deployment and a production-style
 restore drill.
+
+## LAN discovery
+
+The commercial server can advertise `_leet-warehouse._tcp.local` through
+mDNS/DNS-SD. Set `LEE_T_MDNS=1` with a direct HTTPS LAN listener
+(`APP_BIND=0.0.0.0` or `::`) and a configured `.local` HTTPS origin
+whose certificate is trusted on the client. Discovery is opt-in so existing
+reverse-proxy and plain loopback installations continue to use their
+configured address. The server re-advertises when its interface addresses
+change and withdraws the advertisement on graceful shutdown.
+
+The diagnostic client can read a JSON file containing the paired
+`serverId` and `origin` with
+`node scripts/find-warehouse.mjs paired-server.json`. It only probes the
+paired HTTPS origin when the DNS-SD identity, host and port match. It
+rejects certificate failures, mismatched HTTPS identities and redirects.
+Discovery is a convenience for an already paired client. It grants no
+employee access. If discovery fails, use the originally paired HTTPS
+address and check LAN multicast and certificate trust.
+
+The automated discovery test exchanges real UDP multicast packets on
+loopback and verifies HTTPS using a test certificate. An adapter fixture
+provides the loopback address because this test environment does not
+expose host adapter enumeration. Address-change handling has a separate
+automated test. Windows and smartphone discovery on the actual LAN,
+including DHCP address change and AP isolation, still require field testing.

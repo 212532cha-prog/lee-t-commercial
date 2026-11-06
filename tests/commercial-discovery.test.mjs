@@ -1,0 +1,98 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { request } from 'node:https';
+import { createSocket } from 'node:dgram';
+import { once } from 'node:events';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import os, { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { createAuthServer } from '../src/auth/http.mjs';
+import { advertiseWarehouse, discoveryConfig, discoveryRecord, findWarehouse, maintainWarehouseAdvertisement, verifyWarehouseCandidate } from '../src/commercial/discovery.mjs';
+
+test('discovery ignores mismatched IDs, hosts and ports before attempting HTTPS', async () => {
+  const paired = { serverId: randomUUID(), origin: 'https://warehouse.local:3443' };
+  const service = { type: 'leet-warehouse', protocol: 'tcp', host: 'warehouse.local', port: 3443, txt: { id: paired.serverId, v: '1' } };
+  for (const candidate of [{ ...service, host: 'other.local' }, { ...service, port: 443 }, { ...service, txt: { id: randomUUID(), v: '1' } }]) {
+    assert.equal(await verifyWarehouseCandidate(candidate, paired, { send: () => assert.fail('Must not connect to spoofed candidate') }), null);
+  }
+  assert.equal(await verifyWarehouseCandidate(service, paired, { send: async () => Response.json({ schema: 1, serverId: randomUUID() }) }), null);
+  assert.throws(() => discoveryConfig({ LEE_T_MDNS: '1' }, paired, { bind: '127.0.0.1', tls: true }), /direct HTTPS LAN listener/);
+  assert.throws(() => discoveryRecord({ ...paired, origin: 'https://public.example' }), /mDNS host/);
+});
+
+test('real multicast DNS resolves a server only after certificate and HTTPS identity verification', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'leet-mdns-'));
+  const host = 'leet-discovery-' + randomUUID().slice(0, 8) + '.local';
+  const keyPath = join(directory, 'key.pem'), certPath = join(directory, 'cert.pem');
+  let server, advertisement;
+  t.after(async () => {
+    await advertisement?.close();
+    if (server?.listening) {
+      server.closeAllConnections();
+      await new Promise(resolve => server.close(resolve));
+    }
+    await rm(directory, { recursive: true, force: true });
+  });
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyPath, '-out', certPath,
+    '-days', '1', '-subj', '/CN=' + host, '-addext', 'subjectAltName=DNS:' + host], { stdio: 'ignore' });
+  const [key, cert] = await Promise.all([readFile(keyPath), readFile(certPath)]);
+  const serverId = randomUUID();
+  server = createAuthServer({ auth: { pairing: { serverId } }, publicOrigin: 'https://' + host, tls: { key, cert } });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const paired = { serverId, origin: 'https://' + host + ':' + server.address().port };
+  const socket = createSocket('udp4');
+  socket.bind(0, '0.0.0.0');
+  await once(socket, 'listening');
+  const options = { port: socket.address().port, interface: '127.0.0.1', bind: '0.0.0.0' };
+  await new Promise(resolve => socket.close(resolve));
+  const tlsRequest = ca => url => new Promise((resolve, reject) => {
+    assert.equal(url.hostname, host);
+    const req = request(url, {
+      ca, agent: false, family: 4,
+      lookup: (_name, _opts, cb) => cb(null, '127.0.0.1', 4),
+    }, res => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => resolve(new Response(Buffer.concat(chunks), { status: res.statusCode })));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+  // Use a fixed loopback interface fixture while exchanging real multicast packets.
+  t.mock.method(os, 'networkInterfaces', () => ({ test: [{ address: '127.0.0.1', family: 'IPv4', internal: false, mac: '02:00:00:00:00:01' }] }));
+  advertisement = advertiseWarehouse(discoveryRecord(paired), { options });
+  const [verified, untrusted, unrelated] = await Promise.all([
+    findWarehouse(paired, { options, timeoutMs: 6500, send: tlsRequest(cert) }),
+    findWarehouse(paired, { options, timeoutMs: 2200, send: tlsRequest() }),
+    findWarehouse({ ...paired, serverId: randomUUID() }, { options, timeoutMs: 2200, send: () => assert.fail('Unexpected HTTPS request') }),
+  ]);
+  assert.equal(verified, paired.origin);
+  assert.equal(untrusted, null);
+  assert.equal(unrelated, null);
+  await advertisement.close();
+  assert.equal(await findWarehouse(paired, { options, timeoutMs: 700, send: tlsRequest(cert) }), null);
+});
+
+
+test('address changes replace the advertisement and shutdown cancels further refresh', async () => {
+  const paired = { serverId: randomUUID(), origin: 'https://warehouse.local' };
+  let address = '192.168.10.20';
+  const events = [];
+  const maintained = maintainWarehouseAdvertisement(discoveryRecord(paired), {
+    interfaces: () => ({ lan: [{ address, internal: false }] }),
+    start: () => {
+      const published = address;
+      events.push('up:' + published);
+      return { async close() { events.push('down:' + published); } };
+    },
+  });
+  await maintained.refresh();
+  address = '192.168.10.21';
+  await Promise.all([maintained.refresh(), maintained.refresh()]);
+  await maintained.close();
+  await maintained.refresh();
+  assert.deepEqual(events, ['up:192.168.10.20', 'down:192.168.10.20', 'up:192.168.10.21', 'down:192.168.10.21']);
+});

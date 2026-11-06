@@ -2,6 +2,7 @@ import {createServer} from 'node:http';
 import {createServer as createHttpsServer} from 'node:https';
 import {readFileSync} from 'node:fs';
 import QRCode from 'qrcode';
+import { identityPath } from '../commercial/discovery.mjs';
 import {AuthError} from './service.mjs';
 const assets=new Map([['/',['index.html','text/html; charset=utf-8']],['/app.js',['app.js','text/javascript; charset=utf-8']],['/app.css',['app.css','text/css; charset=utf-8']],['/catalog.js',['catalog.js','text/javascript; charset=utf-8']],['/qr-print.js',['qr-print.js','text/javascript; charset=utf-8']],['/stock.js',['stock.js','text/javascript; charset=utf-8']],['/backup.js',['backup.js','text/javascript; charset=utf-8']],['/count.js',['count.js','text/javascript; charset=utf-8']],['/admin.js',['admin.js','text/javascript; charset=utf-8']]]);
 const uuid=/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
@@ -27,6 +28,7 @@ export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=
    if(req.method==='GET'&&url==='/fonts/business-regular.woff2'){res.writeHead(200,{'Content-Type':'font/woff2','Cache-Control':'public, max-age=86400'});res.end(readFileSync(new URL('../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2',import.meta.url)));return;}
    if(req.method==='GET'&&url==='/vendor/jsqr.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(readFileSync(new URL('../../node_modules/jsqr/dist/jsQR.js',import.meta.url)));return;}
    if(req.method==='GET'&&assets.has(url)){const [name,type]=assets.get(url);res.writeHead(200,{'Content-Type':type});res.end(readFileSync(new URL('../../public/app/'+name,import.meta.url)));return;}
+   if(auth.pairing&&req.method==='GET'&&url===identityPath){json(res,200,{schema:1,serverId:auth.pairing.serverId});return;}
    if(req.method==='POST'&&url==='/api/auth/login'){
     const input=await body(req);const key=req.socket.remoteAddress||'unknown';const last=attempts.get(key);const now=clock();
     if(last&&last.until>now&&last.count>=30)throw new AuthError('TOO_MANY_ATTEMPTS',429);

@@ -22,6 +22,7 @@
   "dependencies": {
     "@fontsource/noto-sans-sc": "^5.3.1",
     "@node-rs/argon2": "^2.2.2",
+    "bonjour-service": "1.4.4",
     "fontkit": "^2.0.4",
     "jsqr": "^1.4.0",
     "pdfkit": "^0.20.2",
