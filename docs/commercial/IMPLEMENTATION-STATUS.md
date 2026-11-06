@@ -184,3 +184,27 @@ certificates and PostgreSQL. Cloud deployment, operator certificate
 provisioning and revocation operations, offline signing workflow,
 independent audit retention and recovery drills remain open. Existing
 issuer CLI functions remain available to trusted host operators.
+
+## Offline signing and issuer recovery rehearsal
+
+On the customer server, run `node scripts/lee-t-license.mjs request` and
+send the resulting device request JSON to the issuer. The issuer first
+registers and confirms the purchase through License Center, then generates
+the activation code. On the protected issuer host, run
+`node scripts/sign-offline-license.mjs device-request.json < activation-code.txt > new-license.json`.
+The command uses `LEE_T_ACTIVATION_SERVICE_CONFIG` for the issuer database and
+signing key. Keep the signing key on the issuer host. Send only the signed
+license to the customer for import with
+`node scripts/lee-t-license.mjs install new-license.json`.
+
+Offline issuance uses the same transactional redemption path as HTTPS.
+A repeat request for the same device can retrieve the same signed license
+while the code is still valid. A different device, an expired code or a
+superseded authorization cannot redeem it.
+
+The recovery test takes a consistent logical snapshot of the issuer ledger
+and restores it into a separate test schema. It verifies payments, audit,
+supersession, pending device-bound transfer, signing and retry behavior.
+Production backup automation, secure key recovery, off-host retention and
+cloud recovery acceptance still require deployment and a production-style
+restore drill.
