@@ -11,7 +11,10 @@ const clearCookie=()=> '__Host-warehouse_session=; Path=/; Secure; HttpOnly; Sam
 const deviceCookie=raw=>`__Host-leet_device=${raw}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=34560000`;
 function cookieToken(req,name){const prefix=name+'=';const matches=(req.headers.cookie||'').split(';').map(s=>s.trim()).filter(s=>s.startsWith(prefix));return matches.length===1?matches[0].slice(prefix.length):'';}
 async function body(req,limit=16384){if(Number(req.headers['content-length'])>limit)throw new AuthError('BODY_TOO_LARGE',413);if(req.headers['content-type']?.split(';')[0]!=='application/json')throw new AuthError('JSON_REQUIRED',415);let length=0,chunks=[];for await(const chunk of req){length+=chunk.length;if(length>limit)throw new AuthError('BODY_TOO_LARGE',413);chunks.push(chunk);}try{const value=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(!value||typeof value!=='object'||Array.isArray(value))throw Error('object required');return value;}catch{throw new AuthError('INVALID_JSON');}}
-export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=>Date.now(),catalogRoutes,stockRoutes,backupRoutes,countRoutes,applicationRoutes,tls}){
+export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=>Date.now(),catalogRoutes,stockRoutes,backupRoutes,countRoutes,applicationRoutes,tls,localAdmin=false}){
+ if(localAdmin&&!tls)throw Error('Local administrator origin requires HTTPS');
+ const localPort=Number(new URL(publicOrigin).port||443);
+ const localAuthority='localhost'+(localPort===443?'':':'+localPort);
  const origins=new Set(tunnelPublicOrigin?[publicOrigin,tunnelPublicOrigin]:[publicOrigin]);
  for(const origin of origins){
   if(new URL(origin).protocol!=='https:'||new URL(origin).origin!==origin)throw Error('Allowed origins must use HTTPS');
@@ -24,7 +27,9 @@ export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=
   let parsed,url;const write=!['GET','HEAD'].includes(req.method),raw=cookieToken(req,'__Host-warehouse_session'),csrf=req.headers['x-csrf-token'];
   try{
    try{if(!req.url.startsWith('/'))throw Error();parsed=new URL(req.url,'https://warehouse.invalid');url=parsed.pathname;}catch{throw new AuthError('INVALID_URL');}
-   if(write&&!origins.has(req.headers.origin))throw new AuthError('ORIGIN_REJECTED',403);
+   const localWrite=localAdmin&&['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)&&
+    req.headers.host===localAuthority&&req.headers.origin==='https://'+localAuthority;
+   if(write&&!origins.has(req.headers.origin)&&!localWrite)throw new AuthError('ORIGIN_REJECTED',403);
    if(req.method==='GET'&&url==='/fonts/business-regular.woff2'){res.writeHead(200,{'Content-Type':'font/woff2','Cache-Control':'public, max-age=86400'});res.end(readFileSync(new URL('../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2',import.meta.url)));return;}
    if(req.method==='GET'&&url==='/vendor/jsqr.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(readFileSync(new URL('../../node_modules/jsqr/dist/jsQR.js',import.meta.url)));return;}
    if(req.method==='GET'&&assets.has(url)){const [name,type]=assets.get(url);res.writeHead(200,{'Content-Type':type});res.end(readFileSync(new URL('../../public/app/'+name,import.meta.url)));return;}

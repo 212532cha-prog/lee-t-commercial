@@ -27,9 +27,9 @@ public final class PinnedWorkspace {
     private final Map<String, EventJob> streams = new ConcurrentHashMap<>();
     private volatile boolean closed;
 
-    PinnedWorkspace(WebView view, String origin, String fingerprint) throws Exception {
+    PinnedWorkspace(WebView view, String origin, String fingerprint, String route) throws Exception {
         this.view = view;
-        transport = new WarehouseApiTransport(origin, fingerprint);
+        transport = new WarehouseApiTransport(origin, fingerprint, route);
         deviceFile = new AtomicFile(new File(view.getContext().getNoBackupFilesDir(), "warehouse-" + fingerprint));
         try {
             String[] stored = new String(deviceFile.readFully(), StandardCharsets.UTF_8).split("\n", 2);

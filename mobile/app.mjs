@@ -8,10 +8,16 @@ const storageKey = 'leet-verified-warehouse';
 const workspace = registerPlugin('WarehouseWorkspace');
 const request = options => CapacitorHttp.get(options);
 const requestPinned = options => workspace.verifyIdentity(options);
+const discover = async options => (await workspace.discover(options)).addresses;
 const open = options => workspace.open(options);
 let warehouse;
 try { warehouse = JSON.parse(globalThis.localStorage.getItem(storageKey)); } catch { /* No saved warehouse. */ }
 resume.hidden = !warehouse;
+function remember(verified) {
+  warehouse = verified;
+  globalThis.localStorage.setItem(storageKey, JSON.stringify(verified));
+  resume.hidden = false;
+}
 const status = globalThis.document.querySelector('#status');
 const pairingMessages = new Map([
   ['PAIRING_SCAN_FAILED', 'The scanner could not read a code. Check camera permission and try again.'],
@@ -41,12 +47,9 @@ button.addEventListener('click', async () => {
       }),
       request,
       requestPinned,
+      discover,
       open,
-      remember: verified => {
-        warehouse = verified;
-        globalThis.localStorage.setItem(storageKey, JSON.stringify(verified));
-        resume.hidden = false;
-      },
+      remember,
     });
     status.textContent = opened ? 'Continue signing in in LEE T Mobile.' : 'No QR code was scanned.';
   } catch (error) {
@@ -62,7 +65,7 @@ resume.addEventListener('click', async () => {
   resume.disabled = true;
   status.textContent = 'Verifying the warehouse…';
   try {
-    await resumeWarehouse({ warehouse, request, requestPinned, open });
+    await resumeWarehouse({ warehouse, request, requestPinned, discover, open, remember });
     status.textContent = '';
   } catch (error) {
     status.textContent = pairingMessages.get(error?.message) ?? 'Unable to open the warehouse.';

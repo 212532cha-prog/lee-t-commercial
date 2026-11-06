@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFileSync, execFile } from 'node:child_process';
+import { request } from 'node:https';
 import { createSocket } from 'node:dgram';
 import { once } from 'node:events';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -24,7 +25,7 @@ test('discovery ignores mismatched IDs, hosts and ports before attempting HTTPS'
 
 test('real multicast DNS resolves a server only after certificate and HTTPS identity verification', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'leet-mdns-'));
-  const host = 'leet-discovery-' + randomUUID().slice(0, 8) + '.local';
+  const host = '127.0.0.1';
   const keyPath = join(directory, 'key.pem'), certPath = join(directory, 'cert.pem');
   let server, advertisement;
   t.after(async () => {
@@ -36,12 +37,22 @@ test('real multicast DNS resolves a server only after certificate and HTTPS iden
     await rm(directory, { recursive: true, force: true });
   });
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyPath, '-out', certPath,
-    '-days', '1', '-subj', '/CN=' + host, '-addext', 'subjectAltName=DNS:' + host], { stdio: 'ignore' });
+    '-days', '1', '-subj', '/CN=' + host, '-addext', 'subjectAltName=DNS:localhost,IP:' + host], { stdio: 'ignore' });
   const [key, cert] = await Promise.all([readFile(keyPath), readFile(certPath)]);
   const serverId = randomUUID();
-  server = createAuthServer({ auth: { pairing: { serverId } }, publicOrigin: 'https://' + host, tls: { key, cert } });
+  server = createAuthServer({ auth: { pairing: { serverId } }, publicOrigin: 'https://' + host, tls: { key, cert }, localAdmin: true });
   server.listen(0, '0.0.0.0');
   await once(server, 'listening');
+  const localRequest = (authority, source = '127.0.0.1') => new Promise((resolve, reject) => {
+    const call = request({ hostname: host, servername: 'localhost', port: server.address().port, ca: cert, method: 'POST',
+      path: '/api/not-present', localAddress: source, headers: { Host: authority, Origin: 'https://localhost' } },
+    response => { response.resume(); resolve(response.statusCode); });
+    call.on('error', reject);
+    call.end();
+  });
+  assert.equal(await localRequest('localhost'), 404);
+  assert.equal(await localRequest('wrong.example'), 403);
+  assert.equal(await localRequest('localhost', '127.0.0.2'), 403);
   const paired = { serverId, origin: 'https://' + host + ':' + server.address().port };
   const socket = createSocket('udp4');
   socket.bind(0, '0.0.0.0');

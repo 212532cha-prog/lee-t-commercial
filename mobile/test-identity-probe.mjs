@@ -14,7 +14,7 @@ let server;
 try {
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
     '-subj', '/CN=localhost', '-addext', 'basicConstraints=critical,CA:FALSE',
-    '-addext', 'subjectAltName=DNS:localhost', '-keyout', 'key.pem', '-out', 'cert.pem'],
+    '-addext', 'subjectAltName=DNS:localhost,DNS:warehouse.example', '-keyout', 'key.pem', '-out', 'cert.pem'],
   { cwd: root, stdio: 'ignore' });
   const cert = await readFile(join(root, 'cert.pem'));
   const pin = new X509Certificate(cert).fingerprint256.replaceAll(':', '').toLowerCase();
@@ -33,7 +33,7 @@ try {
     received.push(req.url);
     if (req.url === '/api/auth/login') {
       assert.equal(req.method, 'POST');
-      assert.equal(req.headers.origin, `https://localhost:${server.address().port}`);
+      assert.match(req.headers.origin, new RegExp('^https://(?:localhost|warehouse[.]example):'+server.address().port+'$'));
       assert.equal(req.headers['content-type'], 'application/json');
       let body = '';
       for await (const chunk of req) body += chunk;
@@ -65,8 +65,8 @@ try {
   const implementation = await readFile(new URL('./android-source/WarehouseIdentityProbe.java', import.meta.url), 'utf8');
   const harnessSource = String.raw`public class ProbeHarness {
     public static void main(String[] args) throws Exception {
-        if (args.length == 3) {
-            WarehouseApiTransport transport = new WarehouseApiTransport(args[0], args[1]);
+        if (args.length >= 3 && "api".equals(args[2])) {
+            WarehouseApiTransport transport = new WarehouseApiTransport(args[0], args[1], args.length == 4 ? args[3] : null);
             WarehouseIdentityProbe.Response login = transport.request("POST", "/api/auth/login", "{\"username\":\"fixture\"}", null);
             System.out.println(login.status + ":" + login.body);
             WarehouseIdentityProbe.Response stock = transport.request("POST", "/api/stock/requests", "{}", "fixture-csrf");
@@ -89,12 +89,12 @@ try {
                     System.out.println(expected.getMessage());
                 }
             }
-            WarehouseApiTransport reopened = new WarehouseApiTransport(args[0], args[1]);
+            WarehouseApiTransport reopened = new WarehouseApiTransport(args[0], args[1], args.length == 4 ? args[3] : null);
             reopened.restoreDevice(transport.deviceToken());
             System.out.println(reopened.request("GET", "/api/auth/device", null, null).body);
             return;
         }
-        WarehouseIdentityProbe.Response result = WarehouseIdentityProbe.verify(args[0], args[1]);
+        WarehouseIdentityProbe.Response result = WarehouseIdentityProbe.verify(args[0], args[1], args.length == 3 ? args[2] : null);
         System.out.println(result.status + ":" + result.body);
     }
 }
@@ -115,14 +115,20 @@ try {
   redirect = true;
   assert.equal((await probe(url, pin)).stdout.trim(), '302:null');
   assert.equal(requests, 2);
-  const origin = new URL(url).origin;
-  const output = (await run('java', ['-Dsun.net.http.allowRestrictedHeaders=true', harness, origin, pin, 'api'], { timeout: 10000 })).stdout.trim().split('\n');
+  const origin = new URL(url.replace('localhost', 'warehouse.example')).origin;
+  redirect = false;
+  const routeProbe = (host, fingerprint) => run('java', [
+    harness, url.replace('localhost', host), fingerprint, '127.0.0.1',
+  ], { timeout: 10000 });
+  assert.equal((await routeProbe('warehouse.example', pin)).stdout.trim(), '200:{"schema":1}');
+  await assert.rejects(routeProbe('other.example', pin), { stderr: /does not match the original host/ });
+  const output = (await run('java', ['-Dsun.net.http.allowRestrictedHeaders=true', harness, origin, pin, 'api', '127.0.0.1'], { timeout: 10000 })).stdout.trim().split('\n');
   assert.deepEqual(output, [
     '200:{"csrf":"fixture-csrf"}', '409:{"error":"STOCK_CHANGED"}',
     '{"ready":true}', '{"active":true}', 'Warehouse API redirects are disabled',
     'Invalid warehouse API path', 'Invalid warehouse API path', '{"device":true}',
   ]);
-  await assert.rejects(run('java', ['-Dsun.net.http.allowRestrictedHeaders=true', harness, origin, '0'.repeat(64), 'api'], { timeout: 10000 }),
+  await assert.rejects(run('java', ['-Dsun.net.http.allowRestrictedHeaders=true', harness, origin, '0'.repeat(64), 'api', '127.0.0.1'], { timeout: 10000 }),
     { stderr: /does not match the pairing code/ });
   assert.deepEqual(received, ['/api/auth/login', '/api/stock/requests', '/api/count/events?run=fixture', '/api/stock/redirect', '/api/auth/device']);
   console.log('Android pinned transport verified identity, login cookies, stock errors, count events and redirect rejection.');

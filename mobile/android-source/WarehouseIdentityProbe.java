@@ -53,7 +53,43 @@ final class WarehouseIdentityProbe {
         return connection;
     }
 
-    static SSLSocketFactory socketFactory(String fingerprint) throws Exception {
+    static HttpsURLConnection open(URI logicalUrl, SSLSocketFactory sockets, String route) throws Exception {
+        if (route == null || route.equals(logicalUrl.getHost())) return open(logicalUrl, sockets);
+        if (!route.matches("(?:[0-9]{1,3}\\.){3}[0-9]{1,3}")) {
+            throw new IllegalArgumentException("Discovered warehouse address must be IPv4");
+        }
+        for (String octet : route.split("\\.")) {
+            if (Integer.parseInt(octet) > 255 || (octet.length() > 1 && octet.startsWith("0"))) {
+                throw new IllegalArgumentException("Invalid discovered IPv4 address");
+            }
+        }
+        URI target = new URI("https://" + route + (logicalUrl.getPort() == -1 ? "" : ":" + logicalUrl.getPort()) +
+            logicalUrl.getRawPath() + (logicalUrl.getRawQuery() == null ? "" : "?" + logicalUrl.getRawQuery()));
+        HttpsURLConnection connection = open(target, sockets);
+        // The address is only a route. The pin and SAN still authenticate the originally paired host.
+        connection.setHostnameVerifier((ignored, session) -> {
+            try {
+                X509Certificate leaf = (X509Certificate) session.getPeerCertificates()[0];
+                return hasExactSan(leaf, logicalUrl.getHost());
+            } catch (Exception invalidIdentity) {
+                return false;
+            }
+        });
+        return connection;
+    }
+
+    private static boolean hasExactSan(X509Certificate leaf, String host) throws CertificateException {
+        int expectedType = host.matches("[0-9.]+") ? 7 : 2;
+        var names = leaf.getSubjectAlternativeNames();
+        if (names == null) return false;
+        for (var name : names) {
+            if (Integer.valueOf(expectedType).equals(name.get(0)) &&
+                host.equalsIgnoreCase(String.valueOf(name.get(1)))) return true;
+        }
+        return false;
+    }
+
+    static SSLSocketFactory socketFactory(String fingerprint, String logicalHost) throws Exception {
         if (fingerprint == null || !fingerprint.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("Invalid warehouse certificate fingerprint");
         }
@@ -77,6 +113,9 @@ final class WarehouseIdentityProbe {
                     if (leaf.getBasicConstraints() >= 0 || !MessageDigest.isEqual(expected, actual)) {
                         throw new CertificateException("Warehouse certificate does not match the pairing code");
                     }
+                    if (logicalHost != null && !hasExactSan(leaf, logicalHost)) {
+                        throw new CertificateException("Warehouse certificate does not match the original host");
+                    }
                 } catch (java.security.NoSuchAlgorithmException error) {
                     throw new CertificateException(error);
                 }
@@ -92,7 +131,7 @@ final class WarehouseIdentityProbe {
         return context.getSocketFactory();
     }
 
-    static Response verify(String address, String fingerprint) throws Exception {
+    static Response verify(String address, String fingerprint, String route) throws Exception {
         if (httpsOrigin(address) == null || fingerprint == null ||
             !fingerprint.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("Invalid warehouse identity");
@@ -102,7 +141,7 @@ final class WarehouseIdentityProbe {
             uri.getRawQuery() != null || uri.getRawFragment() != null) {
             throw new IllegalArgumentException("Invalid warehouse identity endpoint");
         }
-        HttpsURLConnection connection = open(uri, socketFactory(fingerprint));
+        HttpsURLConnection connection = open(uri, socketFactory(fingerprint, route == null ? null : uri.getHost()), route);
         try {
             connection.setRequestProperty("Accept", "application/json");
             int status = connection.getResponseCode();
@@ -119,7 +158,7 @@ final class WarehouseIdentityProbe {
                     body = new String(data.toByteArray(), StandardCharsets.UTF_8);
                 }
             }
-            return new Response(status, connection.getURL().toExternalForm(), body);
+            return new Response(status, uri.toASCIIString(), body);
         } finally {
             connection.disconnect();
         }

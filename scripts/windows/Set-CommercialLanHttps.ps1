@@ -52,6 +52,7 @@ try{
  if($LASTEXITCODE -ne 0){throw 'Warehouse HTTPS certificate preflight failed.'}
  $origin='https://'+$HttpsHostname.ToLowerInvariant()+':'+$port
  $config.Environment.PSObject.Properties.Remove('LEE_T_PAIRING_CERT_PATH')
+ $config.Environment.PSObject.Properties.Remove('LEE_T_MDNS')
  $config.Environment.PUBLIC_ORIGIN=$origin
  $config.Environment.TLS_PFX_PATH=$pfx
  $config.Environment.TLS_PFX_PASSPHRASE=$passphrase

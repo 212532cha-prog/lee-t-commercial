@@ -65,6 +65,7 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   PowerShell, Script, Arguments: String;
+  BrowserResult: Integer;
 begin
   if CurStep <> ssPostInstall then Exit;
   PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
@@ -78,7 +79,9 @@ begin
       ewWaitUntilTerminated, ProvisionResult) then
     ProvisionResult := 1;
   if ProvisionResult <> 0 then
-    SuppressibleMsgBox('The warehouse service was not confirmed installed. Keep the displayed setup error for diagnosis.', mbError, MB_OK, IDOK);
+    SuppressibleMsgBox('The warehouse service was not confirmed installed. Keep the displayed setup error for diagnosis.', mbError, MB_OK, IDOK)
+  else if not WizardSilent then
+    ShellExecAsOriginalUser('open', 'https://localhost:3443/', '', '', SW_SHOWNORMAL, ewNoWait, BrowserResult);
 end;
 
 function GetCustomSetupExitCode: Integer;

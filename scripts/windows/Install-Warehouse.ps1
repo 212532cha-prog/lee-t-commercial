@@ -94,7 +94,10 @@ if($HttpsHostname){
 }
 $config=@{ServiceName=$serviceName;AppRoot=$AppRoot;NodePath=$node;Environment=@{DATABASE_URL=$databaseUrl;PUBLIC_ORIGIN=$origin;DATA_DIR=$DataDir;APP_PORT=[string]$Port;APP_BIND='0.0.0.0';TLS_PFX_PATH=$certificate.PfxPath;TLS_PFX_PASSPHRASE=$certificate.Passphrase}}
 if($Commercial){
- if($certificate.LeafCertificate){$config.Environment.LEE_T_PAIRING_CERT_PATH=$certificate.LeafCertificate}
+ if($certificate.LeafCertificate){
+  $config.Environment.LEE_T_PAIRING_CERT_PATH=$certificate.LeafCertificate
+  $config.Environment.LEE_T_MDNS='1'
+ }
  $activation=Join-Path $AppRoot 'activation'
  if(Test-Path -LiteralPath $activation){throw 'Activation staging already exists. Use the repair workflow.'}
  New-Item -ItemType Directory -Path $activation | Out-Null
@@ -126,8 +129,12 @@ New-Service -Name $serviceName -DisplayName $displayName -BinaryPathName ('"'+$e
 & sc.exe failure $serviceName reset= 86400 actions= 'restart/5000/restart/15000/none/0' | Out-Null
 if($LASTEXITCODE -ne 0){throw 'Service recovery configuration failed.'}
 New-NetFirewallRule -DisplayName ($displayName+' LAN HTTPS') -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Program $node -Profile Private -InterfaceAlias $adapter.InterfaceAlias -RemoteAddress LocalSubnet | Out-Null
+if($Commercial -and $certificate.LeafCertificate){
+ New-NetFirewallRule -DisplayName ($displayName+' LAN discovery') -Direction Inbound -Action Allow -Protocol UDP -LocalPort 5353 -Program $node -Profile Private -InterfaceAlias $adapter.InterfaceAlias -RemoteAddress LocalSubnet | Out-Null
+}
 if(-not $NoStart){Start-Service $serviceName}
 Write-Output ('Installed service. LAN address: '+$origin)
+if($Commercial -and $certificate.LeafCertificate){Write-Output ('Administrator on this PC: https://localhost:'+$Port)}
 if($certificate.RootCertificate){Write-Output ('Install and trust this test root certificate on each phone: '+$certificate.RootCertificate)}
 Write-Output 'Phone/HID, actual shutdown/reboot, external storage and new-computer restore still require the acceptance checklist. Do not open router/public ports.'
 

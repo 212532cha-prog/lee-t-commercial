@@ -108,3 +108,33 @@ test('Android pairing uses the scanned pin for both the initial probe and resume
   await assert.rejects(resumeWarehouse({ warehouse: remembered[0], request, open }), /PAIRING_PIN_REQUIRED/);
   assert.equal(opened.length, 2);
 });
+
+test('Android reopens a relocated warehouse only after verifying its original pin and server ID', async () => {
+  const certificateFingerprint = 'ab'.repeat(32);
+  const warehouse = { origin, serverId: invitation.serverId, certificateFingerprint };
+  const attempted = [], opened = [], saved = [];
+  const discover = async options => {
+    assert.deepEqual(options, { serverId: invitation.serverId, port: 3443 });
+    return ['192.168.0.11', '192.168.0.12', '192.168.0.13'];
+  };
+  const requestPinned = async ({ url, certificateFingerprint: pin, route }) => {
+    assert.equal(url, origin + '/api/commercial/server-identity');
+    assert.equal(pin, certificateFingerprint);
+    attempted.push(route);
+    if (!route || route.endsWith('.11')) throw Error('Invalid TLS route');
+    return { status: 200, url, data: {
+      schema: 1, serverId: route.endsWith('.13') ? invitation.serverId : randomUUID(),
+    } };
+  };
+  const open = options => opened.push(options);
+  await resumeWarehouse({ warehouse, requestPinned, discover, open, remember: next => saved.push(next) });
+  assert.deepEqual(attempted, [undefined, '192.168.0.11', '192.168.0.12', '192.168.0.13']);
+  assert.deepEqual(opened, [{ url: origin + '/', certificateFingerprint, route: '192.168.0.13' }]);
+  await assert.rejects(resumeWarehouse({ warehouse, requestPinned, discover: () => ['192.168.0.12'], open }),
+    /PAIRING_HTTPS_FAILED/);
+  assert.equal(opened.length, 1);
+  assert.deepEqual(saved, [{ ...warehouse, route: '192.168.0.13' }]);
+  attempted.length = 0;
+  await resumeWarehouse({ warehouse: saved[0], requestPinned, discover: () => assert.fail('Cached route should be reused'), open });
+  assert.deepEqual(attempted, ['192.168.0.13']);
+});

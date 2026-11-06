@@ -63,9 +63,9 @@ export async function verifyPairingServer({ origin, serverId, certificateFingerp
   }
 }
 
-export async function preparePairingSignIn(text, { send = fetch, now = Date.now } = {}) {
+export async function preparePairingSignIn(text, { send = fetch, now = Date.now, verify = verifyPairingServer } = {}) {
   const invitation = parsePairingQr(text, { now: now() });
-  await verifyPairingServer(invitation, send);
+  await verify(invitation, send);
   if (Date.parse(invitation.expiresAt) <= now()) throw Error('PAIRING_LINK_EXPIRED');
   const signIn = new URL('/', invitation.origin);
   signIn.hash = fragmentPrefix + encodeURIComponent(JSON.stringify(invitation));

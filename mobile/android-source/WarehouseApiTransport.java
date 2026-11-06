@@ -17,9 +17,11 @@ final class WarehouseApiTransport {
     private static final int MAX_JSON_BYTES = 2 * 1024 * 1024;
     private final URI origin;
     private final SSLSocketFactory sockets;
+    private final String route;
     private final CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ORIGINAL_SERVER);
 
-    WarehouseApiTransport(String origin, String fingerprint) throws Exception {
+    WarehouseApiTransport(String origin, String fingerprint, String route) throws Exception {
+        this.route = route;
         if (WarehouseIdentityProbe.httpsOrigin(origin) == null) {
             throw new IllegalArgumentException("Invalid warehouse origin");
         }
@@ -28,7 +30,7 @@ final class WarehouseApiTransport {
             this.origin.getRawFragment() != null) {
             throw new IllegalArgumentException("Use the warehouse origin without a path");
         }
-        sockets = WarehouseIdentityProbe.socketFactory(fingerprint);
+        sockets = WarehouseIdentityProbe.socketFactory(fingerprint, route == null ? null : this.origin.getHost());
     }
 
     private static final String DEVICE_COOKIE = "__Host-leet_device";
@@ -109,7 +111,7 @@ final class WarehouseApiTransport {
     }
 
     private HttpsURLConnection connection(URI url, String accept) throws Exception {
-        HttpsURLConnection connection = WarehouseIdentityProbe.open(url, sockets);
+        HttpsURLConnection connection = WarehouseIdentityProbe.open(url, sockets, route);
         connection.setRequestProperty("Accept", accept);
         connection.setRequestProperty("Origin", origin.toString());
         for (java.util.Map.Entry<String, java.util.List<String>> entry :

@@ -1,6 +1,7 @@
 import os from 'node:os';
 import { request } from 'node:https';
 import { isIP } from 'node:net';
+import { checkServerIdentity } from 'node:tls';
 import Bonjour from 'bonjour-service';
 import { makeDiscoveryRecord } from './pairing.mjs';
 
@@ -10,7 +11,8 @@ export const identityPath = '/api/commercial/server-identity';
 export function discoveryRecord({ serverId, origin }) {
   const url = new URL(origin);
   if (url.protocol !== 'https:' || url.origin !== origin) throw Error('Discovery requires an HTTPS origin.');
-  return makeDiscoveryRecord({ serverId, host: url.hostname, port: Number(url.port || 443) });
+  const host = isIP(url.hostname) === 4 ? 'leet-' + serverId + '.local' : url.hostname;
+  return makeDiscoveryRecord({ serverId, host, port: Number(url.port || 443) });
 }
 
 export function discoveryConfig(settings, pairing, listener) {
@@ -51,7 +53,11 @@ export function requestWarehouseIdentity(url, { address, signal, ca } = {}) {
   return new Promise((resolve, reject) => {
     const req = request(url, {
       agent: false, signal, ca,
-      ...(family && { family, lookup: (_hostname, _options, callback) => callback(null, address, family) }),
+      ...(family && {
+        family, hostname: address, servername: isIP(url.hostname) ? '' : url.hostname,
+        headers: { Host: url.host },
+        checkServerIdentity: (_hostname, certificate) => checkServerIdentity(url.hostname, certificate),
+      }),
     }, res => {
       const chunks = [];
       let size = 0;
@@ -85,9 +91,10 @@ export async function verifyWarehouseAddress(paired, address, { send = requestWa
 
 export async function verifyWarehouseCandidate(service, paired, options) {
   const record = discoveryRecord(paired);
+  const advertisedHost = service?.host?.toLowerCase().replace(/\.$/, '');
   if (service?.type !== type || service.protocol !== 'tcp' ||
       service.txt?.v !== '1' || service.txt.id !== record.serverId ||
-      service.host?.toLowerCase().replace(/\.$/, '') !== record.host || service.port !== record.port) {
+      advertisedHost !== record.host || service.port !== record.port) {
     return null;
   }
   const addresses = [...new Set((service.addresses ?? []).filter(address => isIP(address)))].slice(0, 8);
