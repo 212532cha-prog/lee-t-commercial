@@ -95,5 +95,30 @@ issuer signature and the local device before saving the response. Following
 activation, startup validates the saved license locally.
 
 The issuer service is a development entry point. Admin MFA, customer and
-payment management, deployment protections, paid updates and transfers
-remain open.
+payment management, production deployment protections, update installation
+and warehouse data migration remain open.
+
+## Paid upgrades and server replacement approvals
+
+A trusted operator can issue initial, upgrade or transfer codes with
+`node scripts/issue-activation-code.mjs <approval.json>`. It reads the
+issuer database connection from `LEE_T_ACTIVATION_SERVICE_CONFIG`. Start the
+issuer service once to initialize its database before issuing codes. The approval
+file contains `kind`, `customerId`, `version`, `expiresAt` and `paid`.
+Follow-up approvals also require `priorLicenseId`, a hashed device
+`request` from the intended server, `paymentReference` and `approvedBy`.
+Keep these files on the issuer host and deliver the generated code to the
+approved customer through a private channel.
+
+An upgrade requires the current installation and at least two matching
+hardware claims. A transfer requires a different server. Redemption must
+match the approved request exactly, and a successful redemption supersedes
+its predecessor in the issuer database in the same transaction. A failed
+signing attempt rolls back the change. An expired, unused approval can be
+reissued using the same receipt for the same target and version. Issuance,
+replacement and redemption records remain available in the issuer database.
+
+The operator CLI relies on issuer host access controls. Production login,
+MFA, payment reconciliation and independent audit retention are pending.
+An already activated offline predecessor remains locally usable while
+disconnected. This module does not install updates or migrate warehouse data.

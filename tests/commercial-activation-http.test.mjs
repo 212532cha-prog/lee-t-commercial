@@ -8,9 +8,9 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { activateOnline, activationPath } from '../src/commercial/activation-client.mjs';
 import { createActivationServer } from '../src/commercial/activation-http.mjs';
-import { createInitialActivationCode, initializeActivationLedger } from '../src/commercial/activation-ledger.mjs';
+import { createFollowupActivationCode, createInitialActivationCode, initializeActivationLedger } from '../src/commercial/activation-ledger.mjs';
 import { generateIssuerKeyPair } from '../src/commercial/license.mjs';
-import { requireLocalLicense } from '../src/commercial/server-license.mjs';
+import { localActivationRequest, requireLocalLicense } from '../src/commercial/server-license.mjs';
 import { testPool } from './helpers/database.mjs';
 
 test('online activation uses trusted HTTPS, stores a signed license and can then verify it offline', async t => {
@@ -70,6 +70,17 @@ test('online activation uses trusted HTTPS, stores a signed license and can then
   assert.deepEqual(await activateOnline(settings, code, options), installed);
   await assert.rejects(activateOnline({ ...settings, LEE_T_LICENSE_DIR: join(directory, 'other') }, code, options), /HTTP 403/);
 
+  const upgradeCode = await createFollowupActivationCode(pool, {
+    customerId: 'customer-online', priorLicenseId: installed.licenseId,
+    kind: 'upgrade', version: '999.0.0', paid: true, paymentReference: 'test-receipt',
+    approvedBy: 'test-operator', expiresAt: new Date(Date.now() + 60000),
+    request: await localActivationRequest(settings, { readDevice }),
+  });
+  const upgraded = await activateOnline(settings, upgradeCode, options);
+  assert.notEqual(upgraded.licenseId, installed.licenseId);
+  assert.equal(upgraded.entitledVersion, '999.0.0');
+  await assert.rejects(activateOnline(settings, code, options), /HTTP 403/);
+
   await new Promise(resolve => server.close(resolve));
-  assert.deepEqual(await requireLocalLicense(settings, { readDevice }), installed);
+  assert.deepEqual(await requireLocalLicense(settings, { readDevice }), upgraded);
 });

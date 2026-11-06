@@ -77,10 +77,12 @@ export function issueLicense({ privateKeyPem, keyId, request, customerId, licens
   return { payload, signature };
 }
 
-function versionLeq(current, entitled) {
-  const a = current.split('.').map(Number), b = entitled.split('.').map(Number);
-  for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return a[i] < b[i]; }
-  return true;
+export function compareVersions(current, entitled) {
+  const a = current.split('.').map(BigInt), b = entitled.split('.').map(BigInt);
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  }
+  return 0;
 }
 
 /** A valid signature, same installation and >=2 matching hardware claims are required. */
@@ -105,7 +107,7 @@ export function verifyLicense({ license, publicKeyPem, request, runningVersion, 
     if (!isRecord(p.deviceClaims)) fail('missing device claims');
     const matching = DEVICE_FIELDS.filter(field => p.deviceClaims[field] === request.claims[field]).length;
     if (matching < 2) fail('device fingerprint does not match');
-    if (!versionLeq(runningVersion, p.entitledVersion)) fail('version is not licensed');
+    if (compareVersions(runningVersion, p.entitledVersion) > 0) fail('version is not licensed');
     return { valid: true, licenseId: p.licenseId, entitledVersion: p.entitledVersion, matchingDeviceClaims: matching };
   } catch (error) { return { valid: false, reason: error.message }; }
 }

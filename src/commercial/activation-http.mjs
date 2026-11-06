@@ -1,5 +1,5 @@
 import { createServer } from 'node:https';
-import { redeemInitialActivationCode } from './activation-ledger.mjs';
+import { redeemActivationCode } from './activation-ledger.mjs';
 
 import { activationPath } from './activation-client.mjs';
 const maxBodyBytes = 4096;
@@ -44,7 +44,7 @@ export function createActivationServer({ tls, pool, issuer, onError = () => {} }
       return reply(response, 400, { error: 'INVALID_REQUEST' });
     }
     try {
-      const license = await redeemInitialActivationCode(pool, input, issuer);
+      const license = await redeemActivationCode(pool, input, issuer);
       return reply(response, 200, { license });
     } catch (error) {
       if (error.code === 'INVALID_ACTIVATION_CODE') return reply(response, 403, { error: error.code });
