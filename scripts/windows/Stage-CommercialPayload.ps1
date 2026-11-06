@@ -32,12 +32,11 @@ try{
  $runtime=Join-Path $temporary 'runtime'
  $pgTarget=Join-Path $runtime 'postgresql'
  New-Item -ItemType Directory -Path $app,$pgTarget -Force | Out-Null
- $archive=Join-Path $temporary 'source.zip'
- & git -C $root archive --format=zip "--output=$archive" HEAD
- if($LASTEXITCODE -ne 0){throw 'Cannot archive tracked source.'}
- & tar.exe -xf $archive -C $app
- if($LASTEXITCODE -ne 0){throw 'Cannot unpack tracked source.'}
- Remove-Item -LiteralPath $archive
+ & git -C $root diff --cached --quiet HEAD
+ if($LASTEXITCODE -ne 0){throw 'Stage from a clean Git index matching HEAD.'}
+ $prefix=$app.Replace('\','/')+'/'
+ & git -C $root checkout-index --all "--prefix=$prefix"
+ if($LASTEXITCODE -ne 0){throw 'Cannot export tracked source.'}
  Copy-Item -LiteralPath $node -Destination (Join-Path $runtime 'node.exe')
  foreach($name in $pgDirectories){Copy-Item -LiteralPath (Join-Path $postgres $name) -Destination $pgTarget -Recurse}
  $env:Path=$nodeRoot+';'+$previousPath
