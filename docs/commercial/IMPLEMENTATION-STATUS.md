@@ -149,3 +149,38 @@ This implementation is for the browser. DNS-SD advertisement and discovery,
 native mobile integration, and real customer LAN and device acceptance remain
 open. A browser with a cleared cookie also requires an administrator to
 unbind and issue a replacement invitation.
+
+## License Center management service
+
+The management service has a dedicated HTTPS listener. It serves the
+customer, payment, issuance and recent audit screens from the issuer-side
+database. It does not share an HTTP listener with public activation redemption.
+
+1. Start the activation service to initialize the issuer database schema.
+2. Configure a separate protected JSON file for management. Set
+   `databaseUrl`, `origin`, `tlsKeyPath`, `tlsCertPath`, `clientCaPath`,
+   and optionally `bind` (defaults to loopback). The server takes its
+   listening port from the HTTPS origin.
+3. Configure the `operators` array. Each entry requires `id`, `role`
+   (`sales` or `issuer`), the client certificate's SHA-256 `fingerprint`
+   in uppercase colon-separated notation, and an Argon2id `passwordHash`.
+   Optionally set `customerId` to limit an operator to one existing customer.
+   Provide each operator their own client certificate and password. The
+   browser uses the certificate during the TLS handshake and prompts for the
+   matching operator ID and password.
+4. Start `node scripts/start-license-management.mjs` with
+   `LEE_T_MANAGEMENT_CONFIG` pointing to that file. The management process
+   has no license signing key. Keep the database and configuration protected
+   on the issuer host.
+
+Register a customer, confirm a unique receipt for the purchased version and
+kind, then issue a code with the issuer role. The paid issuance transaction
+locks the receipt, records the activation code hash and appends audit records.
+Only the authorized response at issuance contains the original activation
+code. An unused expired code can be replaced using the existing receipt.
+
+The management service has local integration coverage using real TLS, client
+certificates and PostgreSQL. Cloud deployment, operator certificate
+provisioning and revocation operations, offline signing workflow,
+independent audit retention and recovery drills remain open. Existing
+issuer CLI functions remain available to trusted host operators.

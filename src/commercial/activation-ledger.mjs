@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { transaction } from '../db/database.mjs';
 import { compareVersions, issueLicense, validateDeviceRequest } from './license.mjs';
 
-const hash = code => createHash('sha256').update(code).digest('hex');
+export const activationCodeHash = code => createHash('sha256').update(code).digest('hex');
 const invalidCode = () => Object.assign(Error('Invalid, expired or already redeemed activation code.'), { code: 'INVALID_ACTIVATION_CODE' });
 
 export async function initializeActivationLedger(pool) {
@@ -47,36 +48,25 @@ export async function initializeActivationLedger(pool) {
   `);
 }
 
-async function transaction(pool, work) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const result = await work(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
 // This function is for a trusted issuer only. A public activation endpoint must
 // expose redemption alone. Use a database separate from any customer warehouse.
-export async function createInitialActivationCode(pool, { customerId, version, paid, expiresAt }) {
+export function createInitialActivationCode(pool, input) {
+  return transaction(pool, client => createInitialActivationCodeIn(client, input));
+}
+
+export async function createInitialActivationCodeIn(client, { customerId, version, paid, expiresAt }) {
   if (paid !== true) throw Error('Payment confirmation is required.');
   if (typeof customerId !== 'string' || !customerId.trim() || customerId.length > 160 ||
       typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version) ||
       !(expiresAt instanceof Date) || !(expiresAt.getTime() > Date.now())) {
     throw Error('Valid customer, version and expiry are required.');
   }
-  return transaction(pool, client => insertCode(client, { customerId: customerId.trim(), version, expiresAt }));
+  return insertCode(client, { customerId: customerId.trim(), version, expiresAt });
 }
 
 async function insertCode(client, { customerId, version, expiresAt }) {
   const code = `LT-${randomBytes(24).toString('base64url')}`;
-  const codeHash = hash(code);
+  const codeHash = activationCodeHash(code);
   await client.query(
     'INSERT INTO lee_t_activation_codes (code_hash, customer_id, version, expires_at) VALUES ($1, $2, $3, $4)',
     [codeHash, customerId, version, expiresAt],
@@ -94,7 +84,11 @@ function validText(value) {
 }
 
 // Only the authenticated issuer may approve purchases and submit device requests.
-export async function createFollowupActivationCode(pool, {
+export function createFollowupActivationCode(pool, input) {
+  return transaction(pool, client => createFollowupActivationCodeIn(client, input));
+}
+
+export async function createFollowupActivationCodeIn(client, {
   customerId, priorLicenseId, kind, version, expiresAt, request, paid, paymentReference, approvedBy,
 }) {
   if (paid !== true || !validText(paymentReference) || !validText(approvedBy)) {
@@ -106,53 +100,51 @@ export async function createFollowupActivationCode(pool, {
     throw Error('Valid customer, prior license, kind, version and expiry are required.');
   }
   validateDeviceRequest(request);
-  return transaction(pool, async client => {
-    const { rows: [prior] } = await client.query(
-      `SELECT code_hash, license FROM lee_t_activation_codes
-       WHERE license->'payload'->>'licenseId' = $1 AND customer_id = $2 FOR UPDATE`,
-      [priorLicenseId, customerId.trim()],
-    );
-    if (!prior || await hasSuccessor(client, prior.code_hash)) throw Error('An active prior license for this customer is required.');
-    const pending = await client.query(
-      `SELECT 1 FROM lee_t_activation_followups AS f
-       JOIN lee_t_activation_codes AS c ON c.code_hash = f.code_hash
-       WHERE f.prior_code_hash = $1 AND c.expires_at > clock_timestamp()`, [prior.code_hash],
-    );
-    if (pending.rows.length) throw Error('A follow-up approval is already pending for this license.');
-    const payload = prior.license.payload;
-    const versionChange = compareVersions(version, payload.entitledVersion);
-    if (versionChange < 0 || (kind === 'upgrade' && versionChange === 0)) throw Error('Invalid target version for this purchase.');
-    const sameInstallation = payload.installationId === request.installationId;
-    const matches = matchingClaims(payload.deviceClaims, request);
-    if (kind === 'upgrade' && (!sameInstallation || matches < 2)) throw Error('Upgrade requires the current installation.');
-    if (kind === 'transfer' && (sameInstallation || matches >= 2)) throw Error('Transfer requires a different server.');
-    const targetRequest = { installationId: request.installationId, claims: request.claims };
-    const payment = paymentReference.trim();
-    const { rows: [previousApproval] } = await client.query(
-      `SELECT f.code_hash, f.prior_code_hash, f.kind, f.target_request, c.version,
-              c.redeemed_at, c.expires_at > clock_timestamp() AS live
-       FROM lee_t_activation_followups AS f
-       JOIN lee_t_activation_codes AS c ON c.code_hash = f.code_hash
-       WHERE f.payment_reference = $1 AND f.replaced_at IS NULL`, [payment],
-    );
-    if (previousApproval) {
-      if (previousApproval.prior_code_hash !== prior.code_hash || previousApproval.kind !== kind ||
-          previousApproval.version !== version || previousApproval.redeemed_at || previousApproval.live ||
-          previousApproval.target_request.installationId !== request.installationId ||
-          matchingClaims(previousApproval.target_request.claims, request) !== 3) {
-        throw Error('Payment reference is already associated with another approval.');
-      }
-      await client.query('UPDATE lee_t_activation_followups SET replaced_at = now() WHERE code_hash = $1', [previousApproval.code_hash]);
+  const { rows: [prior] } = await client.query(
+    `SELECT code_hash, license FROM lee_t_activation_codes
+     WHERE license->'payload'->>'licenseId' = $1 AND customer_id = $2 FOR UPDATE`,
+    [priorLicenseId, customerId.trim()],
+  );
+  if (!prior || await hasSuccessor(client, prior.code_hash)) throw Error('An active prior license for this customer is required.');
+  const pending = await client.query(
+    `SELECT 1 FROM lee_t_activation_followups AS f
+     JOIN lee_t_activation_codes AS c ON c.code_hash = f.code_hash
+     WHERE f.prior_code_hash = $1 AND c.expires_at > clock_timestamp()`, [prior.code_hash],
+  );
+  if (pending.rows.length) throw Error('A follow-up approval is already pending for this license.');
+  const payload = prior.license.payload;
+  const versionChange = compareVersions(version, payload.entitledVersion);
+  if (versionChange < 0 || (kind === 'upgrade' && versionChange === 0)) throw Error('Invalid target version for this purchase.');
+  const sameInstallation = payload.installationId === request.installationId;
+  const matches = matchingClaims(payload.deviceClaims, request);
+  if (kind === 'upgrade' && (!sameInstallation || matches < 2)) throw Error('Upgrade requires the current installation.');
+  if (kind === 'transfer' && (sameInstallation || matches >= 2)) throw Error('Transfer requires a different server.');
+  const targetRequest = { installationId: request.installationId, claims: request.claims };
+  const payment = paymentReference.trim();
+  const { rows: [previousApproval] } = await client.query(
+    `SELECT f.code_hash, f.prior_code_hash, f.kind, f.target_request, c.version,
+            c.redeemed_at, c.expires_at > clock_timestamp() AS live
+     FROM lee_t_activation_followups AS f
+     JOIN lee_t_activation_codes AS c ON c.code_hash = f.code_hash
+     WHERE f.payment_reference = $1 AND f.replaced_at IS NULL`, [payment],
+  );
+  if (previousApproval) {
+    if (previousApproval.prior_code_hash !== prior.code_hash || previousApproval.kind !== kind ||
+        previousApproval.version !== version || previousApproval.redeemed_at || previousApproval.live ||
+        previousApproval.target_request.installationId !== request.installationId ||
+        matchingClaims(previousApproval.target_request.claims, request) !== 3) {
+      throw Error('Payment reference is already associated with another approval.');
     }
-    const code = await insertCode(client, { customerId: customerId.trim(), version, expiresAt });
-    await client.query(
-      `INSERT INTO lee_t_activation_followups
-       (code_hash, prior_code_hash, kind, target_request, payment_reference, approved_by)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [hash(code), prior.code_hash, kind, targetRequest, payment, approvedBy.trim()],
-    );
-    return code;
-  });
+    await client.query('UPDATE lee_t_activation_followups SET replaced_at = now() WHERE code_hash = $1', [previousApproval.code_hash]);
+  }
+  const code = await insertCode(client, { customerId: customerId.trim(), version, expiresAt });
+  await client.query(
+    `INSERT INTO lee_t_activation_followups
+     (code_hash, prior_code_hash, kind, target_request, payment_reference, approved_by)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [activationCodeHash(code), prior.code_hash, kind, targetRequest, payment, approvedBy.trim()],
+  );
+  return code;
 }
 
 async function hasSuccessor(client, codeHash) {
@@ -173,7 +165,7 @@ export async function redeemActivationCode(pool, { code, request }, { privateKey
   } catch {
     throw invalidCode();
   }
-  const codeHash = hash(code);
+  const codeHash = activationCodeHash(code);
   return transaction(pool, async client => {
     const { rows: [record] } = await client.query(
       'SELECT customer_id, version, license, expires_at > clock_timestamp() AS live FROM lee_t_activation_codes WHERE code_hash = $1 FOR UPDATE',

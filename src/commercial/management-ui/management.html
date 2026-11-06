@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Lee T License Center</title><script src="/management.js" defer></script></head>
+<body>
+<h1>Lee T License Center</h1>
+<p>Register a customer, confirm a payment, then issue an activation code.</p>
+<section>
+<h2>Customers</h2>
+<form id="customer" method="post"><label>Company name <input name="companyName" required maxlength="160"></label> <button>Register</button></form>
+<label>Selected customer <select id="customers"><option value="">Select a customer</option></select></label>
+</section>
+<section>
+<h2>Confirm payment</h2>
+<form id="payment" method="post">
+<label>Receipt reference <input name="receiptReference" required maxlength="160"></label>
+<label>Purchase <select name="kind"><option>initial</option><option>upgrade</option><option>transfer</option></select></label>
+<label>Version <input name="version" placeholder="1.0.0" required></label>
+<button>Confirm payment</button>
+</form>
+</section>
+<section>
+<h2>Issue activation code</h2>
+<form id="issue" method="post">
+<label>Payment <select id="payments" name="paymentId" required><option value="">Select a payment</option></select></label>
+<label>Expires <input type="datetime-local" name="expiresAt" required></label>
+<label>Prior license ID for upgrades or transfers <input name="priorLicenseId"></label>
+<label>Device request JSON for upgrades or transfers <textarea name="request"></textarea></label>
+<button>Issue code</button>
+</form>
+</section>
+<p role="status" id="status"></p>
+<output id="code" aria-label="Issued activation code"></output>
+<h2>Recent customer audit</h2>
+<ul id="audit"></ul>
+</body>
+</html>

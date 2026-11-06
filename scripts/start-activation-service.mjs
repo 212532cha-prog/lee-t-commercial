@@ -3,6 +3,8 @@ import pg from 'pg';
 import { initializeActivationLedger } from '../src/commercial/activation-ledger.mjs';
 import { createActivationServer } from '../src/commercial/activation-http.mjs';
 
+import { initializeLicenseManagement } from '../src/commercial/license-management.mjs';
+
 let pool;
 try {
   const settings = JSON.parse(await readFile(process.env.LEE_T_ACTIVATION_SERVICE_CONFIG, 'utf8'));
@@ -14,6 +16,7 @@ try {
   ]);
   pool = new pg.Pool({ connectionString: settings.databaseUrl, connectionTimeoutMillis: 5000 });
   await initializeActivationLedger(pool);
+  await initializeLicenseManagement(pool);
   const server = createActivationServer({
     pool, tls: { key, cert }, issuer: { privateKeyPem, keyId: settings.issuerKeyId },
     onError: () => console.error('Activation redemption failed.'),
