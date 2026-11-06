@@ -1,0 +1,49 @@
+name: Lee T Android debug APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'public/app/pairing.js'
+      - 'tests/commercial-android-launcher.test.mjs'
+      - '.github/workflows/android-debug.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Test pairing and launcher
+        run: node --test tests/commercial-mobile-pairing.test.mjs tests/commercial-android-launcher.test.mjs
+      - name: Generate Android project
+        working-directory: mobile
+        run: |
+          npm ci --ignore-scripts
+          npm run android:prepare
+      - name: Build and verify debug APK
+        working-directory: mobile/android
+        run: |
+          ./gradlew --no-daemon assembleDebug
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | grep -F "package: name='my.leet.warehouse'"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lee-T-Mobile-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
