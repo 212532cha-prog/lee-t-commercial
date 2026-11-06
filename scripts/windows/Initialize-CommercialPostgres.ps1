@@ -49,13 +49,22 @@ $appSecret=New-HexSecret
 try{
  New-Item -ItemType Directory -Path $root | Out-Null
  $owned=$true
+ $setupSid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
  & icacls.exe $root '/inheritance:r' '/grant:r' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-20:(OI)(CI)M' | Out-Null
  if($LASTEXITCODE -ne 0){throw 'Cannot protect the PostgreSQL cluster directory.'}
+ if($setupSid -ne 'S-1-5-18'){
+  & icacls.exe $root '/grant:r' ('*'+$setupSid+':(OI)(CI)M') | Out-Null
+  if($LASTEXITCODE -ne 0){throw 'Cannot grant temporary access for PostgreSQL initialization.'}
+ }
  [IO.File]::WriteAllText($secretFile,$adminSecret+[Environment]::NewLine,$encoding)
  try{
   & $initdb -D $cluster -U postgres -A scram-sha-256 --pwfile $secretFile --encoding=UTF8 --locale=C | Out-Null
   if($LASTEXITCODE -ne 0){throw 'Commercial PostgreSQL initialization failed.'}
  }finally{if(Test-Path -LiteralPath $secretFile){Remove-Item -LiteralPath $secretFile -Force}}
+ if($setupSid -ne 'S-1-5-18'){
+  & icacls.exe $root '/remove:g' ('*'+$setupSid) | Out-Null
+  if($LASTEXITCODE -ne 0){throw 'Cannot remove temporary PostgreSQL setup access.'}
+ }
  [IO.File]::AppendAllText((Join-Path $cluster 'postgresql.conf'),"`nlisten_addresses = '127.0.0.1'`nport = $Port`n",$encoding)
  & $control register -N $ServiceName -D $cluster -S demand -U 'NT AUTHORITY\NetworkService' -w | Out-Null
  if($LASTEXITCODE -ne 0){throw 'Commercial PostgreSQL service registration failed.'}
