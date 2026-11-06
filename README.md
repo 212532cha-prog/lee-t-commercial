@@ -1,4 +1,4 @@
-# TAT LEE Warehouse Inventory
+# LEE T Warehouse Inventory
 
 Windows局域网库存系统，需求基线REQ-20261101：PRD v2.1、开发计划 v3.1、验收清单 v1.1。
 

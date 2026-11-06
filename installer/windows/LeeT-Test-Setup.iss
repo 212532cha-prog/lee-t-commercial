@@ -7,7 +7,7 @@
 
 [Setup]
 AppId=LeeTCommercialWarehouseTest
-AppName=Lee T Commercial Warehouse Test
+AppName=LEE T Commercial Warehouse Test
 AppVersion=0.8.5
 DefaultDirName={autopf}\Lee T Commercial
 DisableProgramGroupPage=yes

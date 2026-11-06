@@ -4,7 +4,7 @@ $ErrorActionPreference='Stop'
 $ip=[Net.IPAddress]::Parse($Address)
 if ($ip.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { throw 'Use the selected server IPv4 address.' }
 New-Item -ItemType Directory -Path $Directory -Force | Out-Null
-$root=New-SelfSignedCertificate -Type Custom -Subject ('CN=TAT LEE Warehouse CA '+[guid]::NewGuid().ToString('N').Substring(0,8)) -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -KeyExportPolicy NonExportable -KeyUsage CertSign,CRLSign -TextExtension @('2.5.29.19={critical}{text}ca=1') -CertStoreLocation 'Cert:\LocalMachine\My' -NotAfter (Get-Date).AddYears(10)
+$root=New-SelfSignedCertificate -Type Custom -Subject ('CN=LEE T Warehouse CA '+[guid]::NewGuid().ToString('N').Substring(0,8)) -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -KeyExportPolicy NonExportable -KeyUsage CertSign,CRLSign -TextExtension @('2.5.29.19={critical}{text}ca=1') -CertStoreLocation 'Cert:\LocalMachine\My' -NotAfter (Get-Date).AddYears(10)
 $leaf=New-SelfSignedCertificate -Type Custom -Subject ('CN='+$Address) -Signer $root -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -KeyExportPolicy Exportable -KeyUsage DigitalSignature,KeyEncipherment -TextExtension @('2.5.29.19={critical}{text}ca=0',('2.5.29.17={text}DNS=localhost&IPAddress=127.0.0.1&IPAddress='+$Address),'2.5.29.37={text}1.3.6.1.5.5.7.3.1') -CertStoreLocation 'Cert:\LocalMachine\My' -NotAfter (Get-Date).AddDays(365)
 $bytes=New-Object byte[] 32
 $rng=[Security.Cryptography.RandomNumberGenerator]::Create()

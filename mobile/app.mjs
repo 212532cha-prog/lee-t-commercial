@@ -17,7 +17,7 @@ const pairingMessages = new Map([
 ]);
 if (!Capacitor.isNativePlatform()) {
   button.disabled = true;
-  status.textContent = 'Open Lee T Mobile on an Android device to scan a pairing code.';
+  status.textContent = 'Open LEE T Mobile on an Android device to scan a pairing code.';
 }
 button.addEventListener('click', async () => {
   button.disabled = true;

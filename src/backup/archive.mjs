@@ -65,10 +65,13 @@ export async function validateArchive(path,meta,{limit=8589934592,stageDir,onRow
    if(row.type==='complete'){if(!header||current||row.sha256!==digest.digest('hex')||row.lines!==lines)throw new AuthError('BACKUP_CHECKSUM');complete=true;continue;}
    digest.update(line);lines++;
    if(!header){if(row.type!=='header'||row.format!=='TATLEE-WAREHOUSE'||row.version!==1||!Number.isFinite(new Date(row.snapshotAt).getTime()))throw new AuthError('INVALID_BACKUP');
-    // Migration 8 changes only local device/session tables excluded from archives.
-    const exact=JSON.stringify(row.meta)===JSON.stringify(meta);
-    const beforePairing=meta.migrations.at(-1)?.version===8&&JSON.stringify(row.meta)===JSON.stringify({...meta,migrations:meta.migrations.slice(0,-1)});
-    if(!exact&&!beforePairing)throw new AuthError('BACKUP_VERSION_MISMATCH',409);
+    // Migrations 8 and 9 leave the archived table layout intact.
+    const latest = meta.migrations.at(-1)?.version;
+    const compatibleVersions = latest === 9 ? [9,8,7] : latest === 8 ? [8,7] : [latest];
+    const compatible = compatibleVersions.some(version=>JSON.stringify(row.meta)===JSON.stringify({
+     ...meta,migrations:meta.migrations.filter(row=>row.version<=version),
+    }));
+    if(!compatible)throw new AuthError('BACKUP_VERSION_MISMATCH',409);
     if(!Array.isArray(row.sequences)||JSON.stringify(row.sequences.map(r=>r.name))!==JSON.stringify(meta.sequences)||row.sequences.some(r=>!/^\d+$/.test(String(r.last_value))||BigInt(r.last_value)>9223372036854775807n||typeof r.is_called!=='boolean'))throw new AuthError('INVALID_BACKUP_SEQUENCE');
     header=row;continue;
    }
@@ -104,6 +107,8 @@ export async function restoreRows(db,path,meta,limit){
   await db.query(`INSERT INTO ${quote(table.name)}(${table.columns.map(quote).join(',')}) VALUES(${values.map((_,i)=>'$'+(i+1)).join(',')})`,copy);
  }});
  for(const [id,parent]of deferred)await db.query('UPDATE warehouse_locations SET parent_id=$2 WHERE id=$1',[id,parent]);
+ // Normalize the old default when a backup predates the display-name migration.
+ await db.query("UPDATE users SET real_name='Administrator' WHERE role='admin' AND username='CTL LEE' AND real_name='Chai Lee Tzar'");
  const count=(await db.query("SELECT count(*) AS count FROM users WHERE role='admin' AND active=true")).rows[0].count;if(Number(count)!==1)throw new AuthError('BACKUP_ADMIN_MISSING');
 }
 export async function copyProtected(source,target){const input=await safeRead(source);let output;try{output=await open(target,'wx',0o600);for await(const chunk of input.createReadStream({autoClose:false}))await output.writeFile(chunk);await output.sync();}finally{await input.close();if(output)await output.close();}}

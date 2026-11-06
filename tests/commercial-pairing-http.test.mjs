@@ -115,9 +115,14 @@ test('pre-pairing archives restore business data and clear local device credenti
   });
   await migrate(pool);
   const auth = new AuthService(pool);
-  await auth.bootstrap(randomUUID());
+  const adminPassword = randomUUID();
+  await auth.bootstrap(adminPassword);
   const { id } = await auth.createEmployee({ username: 'retained', realName: 'Retained employee', password: randomUUID() });
   const path = join(directory, 'before-pairing.whb');
+  const beforeRename = join(directory, 'before-rename.whb');
+  await pool.query("UPDATE users SET real_name='Chai Lee Tzar' WHERE role='admin'");
+  await pool.query('DELETE FROM schema_migrations WHERE version=9');
+  await snapshot(pool, beforeRename, directory);
   // Version 8 changes only tables absent from the old archive format.
   await pool.query('DELETE FROM schema_migrations WHERE version=8');
   await snapshot(pool, path, directory);
@@ -125,9 +130,11 @@ test('pre-pairing archives restore business data and clear local device credenti
   await migrate(pool);
   const meta = await metadata(pool);
   await validateArchive(path, meta);
+  await validateArchive(beforeRename, meta);
   await assert.rejects(validateArchive(path, { ...meta, migrations: meta.migrations.map(row => row.version === 7 ? { ...row, checksum: 'different' } : row) }), { code: 'BACKUP_VERSION_MISMATCH' });
   await pool.query('INSERT INTO employee_device_bindings(user_id,server_id,token_hash) VALUES ($1,$2,$3)', [id, randomUUID(), 'local-test-digest']);
   await transaction(pool, db => restoreRows(db, path, meta));
   assert.equal((await pool.query('SELECT id FROM users WHERE id=$1', [id])).rows.length, 1);
   assert.equal((await pool.query('SELECT user_id FROM employee_device_bindings')).rows.length, 0);
+  assert.equal((await auth.login('CTL LEE', adminPassword)).user.realName, 'Administrator');
 });

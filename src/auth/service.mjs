@@ -39,7 +39,7 @@ export class AuthService{
       const existing=await db.query("SELECT id FROM users WHERE role = 'admin'");
       if(existing.rows.length)return {created:false};
       const encoded=await hashPassword(initialPassword),id=randomUUID();
-      await db.query("INSERT INTO users(id,username,real_name,role,password_hash) VALUES($1,$2,$3,'admin',$4)",[id,'CTL LEE','Chai Lee Tzar',encoded]);
+      await db.query("INSERT INTO users(id,username,real_name,role,password_hash) VALUES($1,$2,$3,'admin',$4)",[id,'CTL LEE','Administrator',encoded]);
       return {created:true};
     });
   }

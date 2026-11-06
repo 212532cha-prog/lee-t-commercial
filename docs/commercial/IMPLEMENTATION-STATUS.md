@@ -3,7 +3,7 @@
 ## Source baseline
 
 - Source: `warehouse-inventory-0.8.5-candidate.zip` supplied by product owner.
-- Existing TAT LEE Warehouse business code is retained; no existing tests deleted or weakened.
+- Existing LEE T Warehouse business code is retained; no existing tests deleted or weakened.
 - Two Chinese-document filenames were restored from the original ZIP using Python `zipfile`, because system `unzip` mangled the names. This is a packaging/extraction repair, not a changed acceptance test.
 
 ## Implemented here

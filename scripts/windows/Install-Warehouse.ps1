@@ -5,7 +5,7 @@ $ErrorActionPreference='Stop'
 function Read-PlainSecret([string]$Prompt) { $secure=Read-Host $Prompt -AsSecureString;$pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure);try{return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)}finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)} }
 function Protect-Directory([string]$Path,[string]$ServiceAccess) { New-Item -ItemType Directory -Path $Path -Force | Out-Null;& icacls.exe $Path '/inheritance:r' '/grant:r' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' ('*S-1-5-19:(OI)(CI)'+$ServiceAccess) '/C' | Out-Null;if($LASTEXITCODE -ne 0){throw 'Cannot apply required NTFS permissions.'} }
 $serviceName = if($Commercial){'LeeTCommercialWarehouse'}else{'TatLeeWarehouse'}
-$displayName = if($Commercial){'Lee T Commercial Warehouse'}else{'TAT LEE Warehouse'}
+$displayName = if($Commercial){'LEE T Commercial Warehouse'}else{'LEE T Warehouse'}
 if(Get-Service $serviceName -ErrorAction SilentlyContinue){throw 'Service already exists. Use the update/migration instructions; reinstall never resets a database.'}
 if(-not $DataDir){$DataDir=Read-Host 'Absolute data directory (at least 2 GB free, outside application folder)'}
 if(([bool]$BackupPath1) -ne ([bool]$BackupPath2)){throw 'Provide both automatic backup paths or omit both.'}
@@ -63,7 +63,7 @@ if(-not $OfflineDependencies){
  try{& $npm ci --omit=dev --ignore-scripts;if($LASTEXITCODE -ne 0){throw 'Dependency installation failed.'}}finally{Pop-Location}
 }
 foreach($backupPath in (@($BackupPath1,$BackupPath2) | Where-Object { $_ })){New-Item -ItemType Directory -Path $backupPath -Force | Out-Null;& icacls.exe $backupPath '/grant:r' '*S-1-5-19:(OI)(CI)M' | Out-Null;if($LASTEXITCODE -ne 0){throw 'Cannot grant backup directory access to LocalService.'}}
-$initial=Read-PlainSecret 'Initial CTL LEE password'
+$initial=Read-PlainSecret 'Initial Administrator password'
 $database=$null
 try{
  if($BundledPostgresDirectory){
