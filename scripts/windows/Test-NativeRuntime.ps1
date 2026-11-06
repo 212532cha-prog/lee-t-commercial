@@ -23,3 +23,5 @@ try {
     Remove-Item Env:PGPASSWORD,Env:WAREHOUSE_NATIVE_PG -ErrorAction SilentlyContinue
     Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+& (Join-Path $PSScriptRoot 'Test-CommercialPostgres.ps1')

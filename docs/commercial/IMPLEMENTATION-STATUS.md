@@ -324,3 +324,17 @@ This is an installer build component. Automatic PostgreSQL service and database
 provisioning, the customer activation wizard, signed setup executable and
 clean-Windows install and rollback acceptance remain open. The build machine
 steps are not customer installation steps.
+
+### Bundled PostgreSQL provisioning
+
+The Windows installer build now includes a provisioning component for a
+dedicated PostgreSQL 17 cluster. It uses the bundled binaries, reserves a
+separate Windows service, configures loopback-only access and SCRAM, and
+creates the limited application database owner. It disables the temporary
+superuser login after provisioning. The application connection is returned
+to the installer for protected configuration and must not be logged.
+
+The Windows native CI check exercises occupied-port refusal, service
+registration and restart, migration, and application-role privileges.
+The customer wizard still needs to call this component and handle rollback
+across activation, database provisioning and application service setup.
