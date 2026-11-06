@@ -303,3 +303,24 @@ Bundle creation and Android project generation/sync passed. APK compilation
 was attempted but blocked before compilation because the environment could
 not fetch the Gradle distribution. Android camera and certificate trust on
 real devices, release signing, iOS, and native business workflows remain open.
+
+### Windows offline installer payload preparation
+
+A Windows build machine can stage the committed application, its production
+dependencies, the native service host, portable Node.js 24 x64 and PostgreSQL
+17 binaries in one directory using `scripts/windows/Stage-CommercialPayload.ps1`.
+The build machine supplies the unpacked vendor distributions and retrieves
+locked npm dependencies during staging. The staged customer runtime contains
+Node and its production dependencies without requiring a customer npm install.
+The staging script checks that the runtimes are present, checks their versions,
+loads native dependencies and publishes the directory only after staging succeeds.
+
+The service installation script has explicit options for a bundled Node
+executable and pre-staged dependencies. Commercial service setup verifies an
+installed license before creating its service or initializing the database.
+It uses a separate service name and a fixed activation-enforcing entry point.
+
+This is an installer build component. Automatic PostgreSQL service and database
+provisioning, the customer activation wizard, signed setup executable and
+clean-Windows install and rollback acceptance remain open. The build machine
+steps are not customer installation steps.

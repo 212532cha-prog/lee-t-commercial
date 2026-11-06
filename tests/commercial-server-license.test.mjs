@@ -54,7 +54,7 @@ test('offline activation is persistent, concurrent-safe and bound to the install
 });
 
 test('commercial startup fails before connecting to the database without a local license', () => {
-  const result = spawnSync(process.execPath, ['scripts/start-app.mjs', '--commercial'], {
+  const result = spawnSync(process.execPath, ['scripts/start-commercial.mjs'], {
     env: { DATABASE_URL: 'postgres://127.0.0.1:1/test', PUBLIC_ORIGIN: 'https://warehouse.test' },
     encoding: 'utf8',
     timeout: 10000,

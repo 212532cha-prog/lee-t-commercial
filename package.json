@@ -11,7 +11,7 @@
     "preflight:https": "node src/preflight/server.mjs",
     "gate:devices": "node scripts/check-stage0-gate.mjs --require-devices",
     "start": "node scripts/start-app.mjs",
-    "start:commercial": "node scripts/start-app.mjs --commercial",
+    "start:commercial": "node scripts/start-commercial.mjs",
     "recover:admin": "node scripts/recover-admin.mjs",
     "lint": "eslint .",
     "package:candidate": "node scripts/package-candidate.mjs"
