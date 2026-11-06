@@ -274,18 +274,18 @@ use the preflight helper to verify the HTTPS server identity before opening
 the sign-in link. The preflight request sends neither the invitation nor
 credentials, follows no redirects, and checks expiry again before returning.
 
-Native Android/iOS launchers, camera integration, app signing and device
-acceptance remain open. The shared JavaScript module is exercised by the
-existing browser pairing flow and targeted parsing and identity tests.
+iOS, release signing and device acceptance remain open. The shared
+JavaScript module is covered by parsing, identity and browser pairing tests.
 
-### Android pairing launcher
+### Android warehouse workspace
 
-The `mobile/` project packages the shared pairing parser in a Capacitor
-launcher. Its Android scanner accepts the employee QR, probes the warehouse
-over HTTPS with redirects disabled, and opens the warehouse login in the
-external browser only if the response URL and server ID match. Browser login
-and the browser-based inventory screens remain the business interface. The
-launcher does not store invitations or credentials.
+LEE T Mobile scans the employee invitation and verifies the server over
+trusted HTTPS before opening a dedicated in-app WebView. The workspace uses
+the existing warehouse screens and permissions for employee sign-in,
+receiving, dispatch and counts. The WebView limits top-level navigation and
+camera access to the verified HTTPS origin and exposes no Capacitor bridge
+to the warehouse pages. The launcher remembers only the server address and
+ID and verifies them again when the employee opens the warehouse later.
 
 From `mobile/`, run `npm ci` and `npm run android:prepare` to generate and sync
 the Android project. The project requires Android SDK 36 and a Gradle
@@ -301,8 +301,8 @@ remain in force. A browser and Android must both trust the site CA.
 
 Bundle creation and Android project generation/sync passed. APK compilation
 was attempted but blocked before compilation because the environment could
-not fetch the Gradle distribution. Android camera and certificate trust on
-real devices, release signing, iOS, and native business workflows remain open.
+not fetch the Gradle distribution. Android camera, in-app sign-in, receiving, dispatch and counts still require
+real-device verification. Release signing and iOS remain open.
 
 ### Windows offline installer payload preparation
 

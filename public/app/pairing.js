@@ -41,15 +41,28 @@ export function parsePairingQr(text, options) {
   return invitation;
 }
 
-// Future native launchers can verify the server before opening the warehouse sign-in view.
+export async function verifyPairingServer({ origin, serverId }, send = fetch) {
+  const endpoint = new URL('/api/commercial/server-identity', origin);
+  if (endpoint.protocol !== 'https:' || endpoint.origin !== origin || !uuid.test(serverId)) {
+    throw Error('INVALID_PAIRING_LINK');
+  }
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), 5000);
+  try {
+    const identity = await send(endpoint, {
+      credentials: 'omit', redirect: 'error', cache: 'no-store', signal: timeout.signal,
+    });
+    if (!identity.ok) throw Error('PAIRING_SERVER_UNAVAILABLE');
+    const server = await identity.json();
+    if (server?.schema !== 1 || server.serverId !== serverId) throw Error('PAIRING_SERVER_MISMATCH');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function preparePairingSignIn(text, { send = fetch, now = Date.now } = {}) {
   const invitation = parsePairingQr(text, { now: now() });
-  const identity = await send(new URL('/api/commercial/server-identity', invitation.origin), {
-    credentials: 'omit', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(5000),
-  });
-  if (!identity.ok) throw Error('PAIRING_SERVER_UNAVAILABLE');
-  const server = await identity.json();
-  if (server?.schema !== 1 || server.serverId !== invitation.serverId) throw Error('PAIRING_SERVER_MISMATCH');
+  await verifyPairingServer(invitation, send);
   if (Date.parse(invitation.expiresAt) <= now()) throw Error('PAIRING_LINK_EXPIRED');
   const signIn = new URL('/', invitation.origin);
   signIn.hash = fragmentPrefix + encodeURIComponent(JSON.stringify(invitation));

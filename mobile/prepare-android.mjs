@@ -22,6 +22,20 @@ if (!manifest.includes(networkConfig)) {
   }
   writeFileSync(manifestPath, manifest.replace('<application', '<application ' + networkConfig));
 }
+let workspaceManifest = readFileSync(manifestPath, 'utf8');
+if (!workspaceManifest.includes('android:name=".WarehouseActivity"')) {
+  workspaceManifest = workspaceManifest.replace('</application>',
+    '<activity android:name=".WarehouseActivity" android:exported="false" />\n    </application>');
+}
+if (!workspaceManifest.includes('android:name="android.permission.CAMERA"')) {
+  workspaceManifest = workspaceManifest.replace('</manifest>',
+    '    <uses-permission android:name="android.permission.CAMERA" />\n</manifest>');
+}
+writeFileSync(manifestPath, workspaceManifest);
+const java = main + '/java/my/leet/warehouse';
+for (const name of ['MainActivity.java', 'WarehouseActivity.java', 'WarehouseWorkspacePlugin.java']) {
+  copyFileSync('android-source/' + name, java + '/' + name);
+}
 mkdirSync(main + '/res/xml', { recursive: true });
 copyFileSync('network-security.xml', main + '/res/xml/leet_network_security.xml');
 run('sync', 'android');

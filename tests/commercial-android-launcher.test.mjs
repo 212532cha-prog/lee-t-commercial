@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
-import { launchPairing } from '../mobile/launcher.mjs';
+import { launchPairing, resumeWarehouse } from '../mobile/launcher.mjs';
 import { parsePairingQr } from '../public/app/pairing.js';
 
 const clock = Date.parse('2026-11-06T08:00:00Z');
@@ -12,8 +12,8 @@ const invitation = {
 };
 const qr = origin + '/#pairing=' + encodeURIComponent(JSON.stringify(invitation));
 
-test('Android launcher opens only a verified invitation in the external browser', async () => {
-  const opened = [];
+test('Android launcher opens only a verified invitation in the in-app workspace', async () => {
+  const opened = [], remembered = [];
   const result = await launchPairing({
     scan: async () => ({ ScanResult: qr }),
     request: async options => {
@@ -24,15 +24,17 @@ test('Android launcher opens only a verified invitation in the external browser'
       return { status: 200, url: options.url, data: { schema: 1, serverId: invitation.serverId } };
     },
     open: async options => opened.push(options.url),
+    remember: warehouse => remembered.push(warehouse),
     now: () => clock,
   });
   assert.equal(result, true);
   assert.equal(opened.length, 1);
   assert.deepEqual(parsePairingQr(opened[0], { now: clock }), invitation);
+  assert.deepEqual(remembered, [{ origin, serverId: invitation.serverId }]);
 });
 
-test('Android launcher leaves browser closed on cancellation, bad QR, redirected and mismatched servers', async () => {
-  const open = () => assert.fail('Unexpected external browser launch');
+test('Android launcher leaves the workspace closed on cancellation, bad QR, redirected and mismatched servers', async () => {
+  const open = () => assert.fail('Unexpected workspace launch');
   const request = () => assert.fail('Unexpected network request');
   assert.equal(await launchPairing({ scan: async () => ({}), open, request }), false);
   await assert.rejects(launchPairing({ scan: async () => ({ ScanResult: 'http://warehouse.local' }), open, request }), /INVALID_PAIRING_LINK/);
@@ -58,8 +60,28 @@ test('Android launcher reports the failed native step without exposing plugin er
   for (const [step, message] of [
     ['scan', 'PAIRING_SCAN_FAILED'],
     ['request', 'PAIRING_HTTPS_FAILED'],
-    ['open', 'PAIRING_BROWSER_FAILED'],
+    ['open', 'PAIRING_WORKSPACE_FAILED'],
   ]) {
     await assert.rejects(launchPairing({ ...launcher, [step]: fail }), { message });
   }
+});
+
+test('Android workspace resume rechecks the saved identity and opens without an invitation', async () => {
+  const warehouse = { origin, serverId: invitation.serverId };
+  const opened = [];
+  const request = async ({ url }) => {
+    assert.equal(url, origin + '/api/commercial/server-identity');
+    return { status: 200, url, data: { schema: 1, serverId: invitation.serverId } };
+  };
+  const open = async ({ url }) => opened.push(url);
+  await resumeWarehouse({ warehouse, request, open });
+  assert.deepEqual(opened, [origin + '/']);
+  await assert.rejects(resumeWarehouse({
+    warehouse: { ...warehouse, serverId: randomUUID() }, request, open,
+  }), /PAIRING_SERVER_MISMATCH/);
+  await assert.rejects(resumeWarehouse({
+    warehouse: { ...warehouse, origin: 'http://warehouse.local' },
+    request: () => assert.fail('Unexpected insecure request'), open,
+  }), /INVALID_PAIRING_LINK/);
+  assert.deepEqual(opened, [origin + '/']);
 });
