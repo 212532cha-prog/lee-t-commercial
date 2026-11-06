@@ -19,17 +19,21 @@ import {ProfileService} from '../src/profile/service.mjs';
 import {ExportService} from '../src/export/service.mjs';
 import {createApplicationRoutes} from '../src/dashboard/routes.mjs';
 import {requireLocalLicense} from '../src/commercial/server-license.mjs';
+import {EmployeePairing} from '../src/commercial/employee-pairing.mjs';
 let pool,lease;
 try{
  const settings=await loadSettings();
+ let pairing;
  if(process.argv.includes('--commercial')){
-  try{await requireLocalLicense(settings);}catch{throw Error('LEE_T_ACTIVATION_REQUIRED');}
+  let license;
+  try{license=await requireLocalLicense(settings);}catch{throw Error('LEE_T_ACTIVATION_REQUIRED');}
+  pairing=new EmployeePairing({serverId:license.installationId,origin:settings.PUBLIC_ORIGIN});
  }
  const listener=await transport(settings);if(listener.tls)createSecureContext(listener.tls);
  if(process.argv.includes('--check-config'))console.log('Protected configuration and TLS material validated; database and device acceptance not executed.');
  else{
   pool=createPool(settings.DATABASE_URL);lease=await pool.connect();const lock=(await lease.query("SELECT pg_try_advisory_lock(hashtextextended(current_database()||'.'||current_schema()||':warehouse-app',0)) AS acquired")).rows[0];if(!lock.acquired)throw Error('ANOTHER_INSTANCE_IS_RUNNING');
-  await migrate(pool);const auth=new AuthService(pool);await auth.bootstrap(settings.BOOTSTRAP_ADMIN_PASSWORD);
+  await migrate(pool);const auth=new AuthService(pool,{pairing});await auth.bootstrap(settings.BOOTSTRAP_ADMIN_PASSWORD);
   const dataDir=resolve(settings.DATA_DIR||'data'),backup=new BackupService(pool,auth,dataDir);await backup.startup();
   // A server restart always invalidates unsent counts, while preserving assignment and saved stock drafts.
   await pool.query("UPDATE count_tasks SET run_generation=run_generation+1,channel_open=false,run_token_hash=NULL,execution_session_hash=NULL WHERE status='active'");

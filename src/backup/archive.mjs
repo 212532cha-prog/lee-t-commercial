@@ -3,7 +3,7 @@ import {open,mkdir,lstat,realpath,rename,rm} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {resolve,sep} from 'node:path';
 import {AuthError} from '../auth/service.mjs';
-const exclude=new Set(['schema_migrations','sessions','system_settings','backup_config','backup_runs','backup_uploads','export_jobs','export_resources','export_history_resources','export_report_resources']);
+const exclude=new Set(['schema_migrations','sessions','system_settings','backup_config','backup_runs','backup_uploads','export_jobs','export_resources','export_history_resources','export_report_resources','employee_pairing_invites','employee_device_bindings','employee_pairing_audit']);
 const quote=name=>'"'+name.replaceAll('"','""')+'"';
 const hash=()=>createHash('sha256');
 export const validAsset=key=>typeof key==='string'&&/^(product-photos|avatars)\/[a-f\d-]{36}\.(png|jpg)$/.test(key);
@@ -65,7 +65,10 @@ export async function validateArchive(path,meta,{limit=8589934592,stageDir,onRow
    if(row.type==='complete'){if(!header||current||row.sha256!==digest.digest('hex')||row.lines!==lines)throw new AuthError('BACKUP_CHECKSUM');complete=true;continue;}
    digest.update(line);lines++;
    if(!header){if(row.type!=='header'||row.format!=='TATLEE-WAREHOUSE'||row.version!==1||!Number.isFinite(new Date(row.snapshotAt).getTime()))throw new AuthError('INVALID_BACKUP');
-    if(JSON.stringify(row.meta)!==JSON.stringify(meta))throw new AuthError('BACKUP_VERSION_MISMATCH',409);
+    // Migration 8 changes only local device/session tables excluded from archives.
+    const exact=JSON.stringify(row.meta)===JSON.stringify(meta);
+    const beforePairing=meta.migrations.at(-1)?.version===8&&JSON.stringify(row.meta)===JSON.stringify({...meta,migrations:meta.migrations.slice(0,-1)});
+    if(!exact&&!beforePairing)throw new AuthError('BACKUP_VERSION_MISMATCH',409);
     if(!Array.isArray(row.sequences)||JSON.stringify(row.sequences.map(r=>r.name))!==JSON.stringify(meta.sequences)||row.sequences.some(r=>!/^\d+$/.test(String(r.last_value))||BigInt(r.last_value)>9223372036854775807n||typeof r.is_called!=='boolean'))throw new AuthError('INVALID_BACKUP_SEQUENCE');
     header=row;continue;
    }

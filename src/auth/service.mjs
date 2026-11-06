@@ -11,7 +11,7 @@ function realName(value){if(typeof value!=='string'||!value.trim()||value.trim()
 export const hashPassword=value=>hash(validatePassword(value),{algorithm:Algorithm.Argon2id,memoryCost:19456,timeCost:2,parallelism:1});
 export function sameToken(a,b){if(typeof a!=='string'||typeof b!=='string')return false;const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);}
 export class AuthService{
-  constructor(pool){this.pool=pool;this.dummyHash=hashPassword(token());}
+  constructor(pool,{pairing}={}){this.pool=pool;this.pairing=pairing;this.dummyHash=hashPassword(token());}
   async authorizeIn(db,raw,{admin=false,write=false,csrf,sessionOnly=false,backupControl=false,taskControl=false}={}){
     if(typeof raw!=='string'||!raw||raw.length>100)throw new AuthError('UNAUTHENTICATED',401);
     const settings=(await db.query('SELECT maintenance,admin_backup_required FROM system_settings WHERE id=1 FOR SHARE')).rows[0];
@@ -20,6 +20,10 @@ export class AuthService{
     const user=(await db.query('SELECT * FROM users WHERE id=$1 FOR UPDATE',[entry.user_id])).rows[0];
     const session=(await db.query('SELECT * FROM sessions WHERE token_hash=$1 AND generation=$2',[digest(raw),user.session_generation])).rows[0];
     if(!session||!user.active)throw new AuthError('SESSION_REPLACED_OR_REVOKED',401);
+    if(this.pairing&&user.role==='employee'){
+      const {rows}=await db.query('SELECT 1 FROM employee_device_bindings WHERE user_id=$1 AND server_id=$2 AND token_hash=$3',[user.id,this.pairing.serverId,session.device_hash]);
+      if(!rows.length)throw new AuthError('SESSION_REPLACED_OR_REVOKED',401);
+    }
     if(admin&&user.role!=='admin')throw new AuthError('FORBIDDEN',403);
     if(write&&!sameToken(csrf,session.csrf_token))throw new AuthError('CSRF_REQUIRED',403);
     if(!sessionOnly){
@@ -39,26 +43,32 @@ export class AuthService{
       return {created:true};
     });
   }
-  async login(username,password){
+  async revokeEmployeeSessionsIn(db,id){
+    const changed=await db.query('UPDATE users SET session_generation=session_generation+1 WHERE id=$1 RETURNING session_generation',[id]);
+    await db.query('DELETE FROM sessions WHERE user_id=$1',[id]);
+    await db.query("UPDATE count_tasks SET run_generation=run_generation+1 WHERE assigned_user_id=$1 AND status='active'",[id]);
+    return changed.rows[0].session_generation;
+  }
+  async login(username,password,pairingInput){
     const name=validateUsername(username);if(typeof password!=='string'||password.length>128)throw new AuthError('INVALID_CREDENTIALS',401);
     const raw=token(),csrf=token();
     return transaction(this.pool,async db=>{
+      if(this.pairing)await db.query('SELECT id FROM system_settings WHERE id=1 FOR SHARE');
       const result=await db.query('SELECT * FROM users WHERE username=$1 FOR UPDATE',[name]),user=result.rows[0];
       const valid=await verify(user?.password_hash||await this.dummyHash,password);
       if(!user||!user.active||!valid)throw new AuthError('INVALID_CREDENTIALS',401);
+      let device;
       if(user.role==='employee'){
-        const changed=await db.query('UPDATE users SET session_generation=session_generation+1 WHERE id=$1 RETURNING session_generation',[user.id]);
-        user.session_generation=changed.rows[0].session_generation;
-        await db.query('DELETE FROM sessions WHERE user_id=$1',[user.id]);
-        await db.query("UPDATE count_tasks SET run_generation=run_generation+1 WHERE assigned_user_id=$1 AND status='active'",[user.id]);
+        if(this.pairing)device=await this.pairing.authorizeLogin(db,user,pairingInput);
+        user.session_generation=await this.revokeEmployeeSessionsIn(db,user.id);
       }
-      await db.query('INSERT INTO sessions(token_hash,user_id,generation,csrf_token) VALUES($1,$2,$3,$4)',[digest(raw),user.id,user.session_generation,csrf]);
-      return {token:raw,csrf,user:publicUser(user)};
+      await db.query('INSERT INTO sessions(token_hash,user_id,generation,csrf_token,device_hash) VALUES($1,$2,$3,$4,$5)',[digest(raw),user.id,user.session_generation,csrf,device?.hash??null]);
+      return {token:raw,csrf,user:publicUser(user),...(device?.raw?{deviceToken:device.raw}:{})};
     });
   }
   async authenticate(raw){
     if(typeof raw!=='string'||!raw||raw.length>100)throw new AuthError('UNAUTHENTICATED',401);
-    const r=await this.pool.query('SELECT u.*,s.csrf_token FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND u.active=true AND s.generation=u.session_generation',[digest(raw)]);
+    const r=await this.pool.query('SELECT u.*,s.csrf_token FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND u.active=true AND s.generation=u.session_generation AND ($2::uuid IS NULL OR u.role=\'admin\' OR EXISTS (SELECT 1 FROM employee_device_bindings d WHERE d.user_id=u.id AND d.server_id=$2 AND d.token_hash=s.device_hash))',[digest(raw),this.pairing?.serverId??null]);
     if(!r.rows[0])throw new AuthError('SESSION_REPLACED_OR_REVOKED',401);
     return {user:publicUser(r.rows[0]),csrf:r.rows[0].csrf_token};
   }
@@ -81,6 +91,8 @@ export class AuthService{
       await this.adminGuard(db,context);const r=await db.query("UPDATE users SET active=false,session_generation=session_generation+1 WHERE id=$1 AND role='employee' RETURNING id",[id]);
       if(!r.rows.length)throw new AuthError('EMPLOYEE_NOT_FOUND',404);
       await db.query('DELETE FROM sessions WHERE user_id=$1',[id]);
+      await db.query('DELETE FROM employee_pairing_invites WHERE user_id=$1',[id]);
+      await db.query('DELETE FROM employee_device_bindings WHERE user_id=$1',[id]);
       await db.query("UPDATE count_tasks SET status='pending',assigned_user_id=NULL,run_generation=run_generation+1 WHERE assigned_user_id=$1 AND status='active'",[id]);
     });
   }

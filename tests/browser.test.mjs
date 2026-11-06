@@ -114,3 +114,34 @@ test('browser Excel import previews without writes and adds products only on con
  await employee.locator('[data-catalog="detail"]').first().waitFor();
  assert.equal(await employee.locator('[data-catalog="import"]').count(),0);
 });
+
+test('employee pairing controls display a QR and a fresh browser completes pairing before signing in',async()=>{
+ const {EmployeePairing}=await import('../src/commercial/employee-pairing.mjs');
+ const pairing=new EmployeePairing({serverId:randomUUID(),origin:'https://warehouse.test'});
+ auth.pairing=pairing;
+ try{
+  const admin=await login();await nav(admin,'team');
+  const issuance=admin.waitForResponse(response=>response.url().endsWith('/pairing/invite'));
+  await admin.locator('[data-pairing="invite"]').click();
+  const {invitation}=await (await issuance).json();
+  const qr=admin.locator('dialog img');
+  await qr.waitFor();
+  await admin.waitForFunction(()=>globalThis.document.querySelector('dialog img')?.naturalWidth===320);
+  await admin.locator('dialog button').click();
+  await qr.waitFor({state:'detached'});
+  const context=await browserFixture.browser.newContext();contexts.push(context);
+  const employee=await context.newPage();employee.on('pageerror',e=>errors.push(e.message));
+  const url=new URL(base);url.hash='pairing='+encodeURIComponent(JSON.stringify(invitation));
+  await employee.goto(url.href);
+  await employee.locator('#username').fill('staff');await employee.locator('#password').fill(password);
+  await employee.locator('#login button').click();
+  await employee.locator('.workspace').waitFor();
+  assert.equal(new URL(employee.url()).hash,'');
+  assert.equal((await context.cookies()).some(cookie=>cookie.name==='__Host-leet_device'&&cookie.httpOnly&&cookie.secure),true);
+  admin.once('dialog',dialog=>dialog.accept());
+  await admin.locator('[data-pairing="unbind"]').click();
+  await employee.locator('#login').waitFor();
+ }finally{
+  delete auth.pairing;
+ }
+});

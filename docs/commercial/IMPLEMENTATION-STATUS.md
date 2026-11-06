@@ -122,3 +122,30 @@ The operator CLI relies on issuer host access controls. Production login,
 MFA, payment reconciliation and independent audit retention are pending.
 An already activated offline predecessor remains locally usable while
 disconnected. This module does not install updates or migrate warehouse data.
+
+## Employee QR enrollment in the commercial warehouse
+
+With `npm run start:commercial`, an administrator can open Team and issue
+a QR code for a specific active employee. The QR contains the configured
+HTTPS origin and a two-minute, single-use invitation. The employee opens
+it with the intended browser and signs in. The server consumes the
+invitation and binds the device inside the login transaction. A second
+browser requires administrator unbinding and a fresh invitation.
+
+The server stores a digest of the device credential and sends the credential
+as an HTTPS-only, HttpOnly cookie. Employee API calls require both the
+paired-device cookie and a valid session. Administrators keep their existing
+multi-device login. Force sign-out ends the employee session while preserving
+the pairing. Unbind removes the pairing, clears any pending invitation,
+ends sessions and invalidates an active stocktake run. Issuance, binding and
+administrator actions are recorded in the local pairing audit table.
+
+Warehouse backups exclude local invitations, device credentials and pairing
+audit. A restored employee account must pair again. The restore validator
+accepts version 7 archives when the exact schema/checksum match differs only
+by the local-device migration.
+
+This implementation is for the browser. DNS-SD advertisement and discovery,
+native mobile integration, and real customer LAN and device acceptance remain
+open. A browser with a cleared cookie also requires an administrator to
+unbind and issue a replacement invitation.

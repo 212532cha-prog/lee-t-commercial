@@ -69,7 +69,7 @@ async function verifyLocalLicense(settings, license, readDevice) {
   const request = await localActivationRequest(settings, { readDevice });
   const result = verifyLicense({ license, publicKeyPem, request, runningVersion: version, allowedKeyIds: [settings.LEE_T_ISSUER_KEY_ID] });
   if (!result.valid) throw Error(result.reason);
-  return result;
+  return { ...result, installationId: request.installationId };
 }
 
 export async function installLocalLicense(settings, source, { readDevice } = {}) {
