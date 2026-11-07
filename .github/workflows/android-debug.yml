@@ -6,6 +6,9 @@ on:
     paths:
       - 'mobile/**'
       - 'public/app/**'
+      - 'src/**'
+      - 'migrations/**'
+      - 'tests/helpers/database.mjs'
       - 'package-lock.json'
       - 'tests/commercial-android-launcher.test.mjs'
       - '.github/workflows/android-debug.yml'
@@ -18,6 +21,26 @@ jobs:
   android:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: warehouse_test
+          POSTGRES_PASSWORD: test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d warehouse_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      WAREHOUSE_NATIVE_PG: '1'
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: test-only
+      PGDATABASE: warehouse_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,10 +54,10 @@ jobs:
           java-version: '21'
       - name: Test pairing and launcher
         run: node --test tests/commercial-mobile-pairing.test.mjs tests/commercial-android-launcher.test.mjs
-      - name: Exercise native pinned TLS probe against a real server
-        run: node mobile/test-identity-probe.mjs
-      - name: Install locked warehouse web assets
-        run: npm ci --omit=dev --ignore-scripts
+      - name: Install locked warehouse dependencies
+        run: npm ci --ignore-scripts
+      - name: Exercise pinned transport against the warehouse API
+        run: node mobile/test-identity-probe.mjs --warehouse
       - name: Generate Android project
         working-directory: mobile
         run: |

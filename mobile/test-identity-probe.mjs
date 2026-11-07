@@ -21,7 +21,7 @@ try {
   let redirect = false;
   let requests = 0;
   const received = [];
-  const cookie = '__Host-warehouse_session=fixture-session';
+  const cookie = '__Host-warehouse_session=' + 'b'.repeat(43);
   const device = '__Host-leet_device=' + 'a'.repeat(43);
   server = createServer({ cert, key: await readFile(join(root, 'key.pem')) }, async (req, res) => {
     if (req.url === '/api/commercial/server-identity') {
@@ -38,7 +38,7 @@ try {
       let body = '';
       for await (const chunk of req) body += chunk;
       assert.equal(body, '{"username":"fixture"}');
-      res.setHeader('Set-Cookie', [cookie + '; Path=/; Secure; HttpOnly', device + '; Path=/; Secure; HttpOnly']);
+      res.setHeader('Set-Cookie', [cookie + '; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=34560000', device + '; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=34560000']);
       res.end('{"csrf":"fixture-csrf"}');
     } else if (req.url === '/api/auth/device') {
       assert.equal(req.headers.cookie, device);
@@ -65,6 +65,10 @@ try {
   const implementation = await readFile(new URL('./android-source/WarehouseIdentityProbe.java', import.meta.url), 'utf8');
   const harnessSource = String.raw`public class ProbeHarness {
     public static void main(String[] args) throws Exception {
+        if (args.length == 3 && "warehouse".equals(args[2])) {
+            exerciseWarehouse(args[0], args[1]);
+            return;
+        }
         if (args.length >= 3 && "api".equals(args[2])) {
             WarehouseApiTransport transport = new WarehouseApiTransport(args[0], args[1], args.length == 4 ? args[3] : null);
             WarehouseIdentityProbe.Response login = transport.request("POST", "/api/auth/login", "{\"username\":\"fixture\"}", null);
@@ -97,6 +101,41 @@ try {
         WarehouseIdentityProbe.Response result = WarehouseIdentityProbe.verify(args[0], args[1], args.length == 3 ? args[2] : null);
         System.out.println(result.status + ":" + result.body);
     }
+
+    private static void exerciseWarehouse(String origin, String pin) throws Exception {
+        WarehouseApiTransport transport = new WarehouseApiTransport(origin, pin, "127.0.0.1");
+        WarehouseApiTransport.Events events = null;
+        try (var input = new java.io.BufferedReader(new java.io.InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+            for (String line; (line = input.readLine()) != null;) {
+                String[] fields = line.split("\t", -1);
+                switch (fields[0]) {
+                    case "EVENTS":
+                        events = transport.openEvents(fields[1]);
+                        System.out.println("200:" + events.readEvent());
+                        break;
+                    case "CLOSE":
+                        if (events != null) events.close();
+                        events = null;
+                        System.out.println("200:{}");
+                        break;
+                    case "REOPEN":
+                        String device = transport.deviceToken();
+                        transport = new WarehouseApiTransport(origin, pin, "127.0.0.1");
+                        transport.restoreDevice(device);
+                        System.out.println("200:{}");
+                        break;
+                    default:
+                        String body = fields[2].isEmpty() ? null : new String(
+                            java.util.Base64.getDecoder().decode(fields[2]), StandardCharsets.UTF_8);
+                        var response = transport.request(fields[0], fields[1], body, fields[3].isEmpty() ? null : fields[3]);
+                        System.out.println(response.status + ":" + response.body);
+                }
+            }
+        } finally {
+            if (events != null) events.close();
+        }
+    }
+
 }
 `;
   const transport = await readFile(new URL('./android-source/WarehouseApiTransport.java', import.meta.url), 'utf8');
@@ -132,6 +171,11 @@ try {
     { stderr: /does not match the pairing code/ });
   assert.deepEqual(received, ['/api/auth/login', '/api/stock/requests', '/api/count/events?run=fixture', '/api/stock/redirect', '/api/auth/device']);
   console.log('Android pinned transport verified identity, login cookies, stock errors, count events and redirect rejection.');
+  if (process.argv.includes('--warehouse')) {
+    const { testWarehouseTransport } = await import('./test-warehouse-transport.mjs');
+    await testWarehouseTransport({ harness, cert, pin, key: await readFile(join(root, 'key.pem')) });
+  }
+
 } finally {
   if (server) await new Promise(resolve => server.close(resolve));
   await rm(root, { recursive: true, force: true });

@@ -33,6 +33,7 @@ final class WarehouseApiTransport {
         sockets = WarehouseIdentityProbe.socketFactory(fingerprint, route == null ? null : this.origin.getHost());
     }
 
+    private static final String SESSION_COOKIE = "__Host-warehouse_session";
     private static final String DEVICE_COOKIE = "__Host-leet_device";
 
     void restoreDevice(String token) throws IOException {
@@ -42,11 +43,18 @@ final class WarehouseApiTransport {
     }
 
     String deviceToken() {
+        return cookieValue(DEVICE_COOKIE);
+    }
+
+    private String cookieValue(String name) {
+        String value = null;
         for (HttpCookie cookie : cookies.getCookieStore().get(origin)) {
-            if (DEVICE_COOKIE.equals(cookie.getName()) && cookie.getSecure() &&
-                "/".equals(cookie.getPath()) && cookie.getValue().matches("[A-Za-z0-9_-]{43}")) return cookie.getValue();
+            if (!name.equals(cookie.getName()) || !cookie.getSecure() || !cookie.isHttpOnly() ||
+                !"/".equals(cookie.getPath()) || !cookie.getValue().matches("[A-Za-z0-9_-]{43}")) continue;
+            if (value != null) return null;
+            value = cookie.getValue();
         }
-        return null;
+        return value;
     }
 
     byte[] readPhoto(String path) throws Exception {
@@ -114,9 +122,14 @@ final class WarehouseApiTransport {
         HttpsURLConnection connection = WarehouseIdentityProbe.open(url, sockets, route);
         connection.setRequestProperty("Accept", accept);
         connection.setRequestProperty("Origin", origin.toString());
-        for (java.util.Map.Entry<String, java.util.List<String>> entry :
-            cookies.get(url, Collections.emptyMap()).entrySet()) {
-            for (String value : entry.getValue()) connection.addRequestProperty(entry.getKey(), value);
+        // CookieManager can emit RFC 2965 quotes and $Version for Max-Age cookies.
+        // The warehouse expects the same unquoted name=value tokens sent by a browser.
+        String session = cookieValue(SESSION_COOKIE);
+        String device = deviceToken();
+        if (session != null || device != null) {
+            String header = session == null ? "" : SESSION_COOKIE + "=" + session;
+            if (device != null) header += (header.isEmpty() ? "" : "; ") + DEVICE_COOKIE + "=" + device;
+            connection.setRequestProperty("Cookie", header);
         }
         return connection;
     }
