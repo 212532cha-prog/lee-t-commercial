@@ -2,17 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="theme-color" content="#10283b">
+  <link rel="stylesheet" href="./pairing.css">
   <title>LEE T Mobile</title>
 </head>
 <body>
-  <main>
-    <h1>LEE T Mobile</h1>
-    <p>Ask your warehouse administrator for an employee pairing QR code.</p>
-    <button id="resume" type="button" hidden>Open warehouse</button>
-    <button id="scan" type="button">Scan pairing QR</button>
-    <p id="status" role="status"></p>
+  <main class="shell">
+    <header class="header">
+      <div class="brand"><span class="mark" aria-hidden="true">LT</span><span>LEE T <small>WAREHOUSE</small></span></div>
+      <select id="language" aria-label="Language"><option value="en">English</option><option value="zh">中文</option><option value="ms">Melayu</option></select>
+    </header>
+    <section class="intro" aria-labelledby="title">
+      <p class="eyebrow" id="kicker"></p>
+      <h1 id="title">Connect to your warehouse</h1>
+      <p id="description"></p>
+    </section>
+    <section class="card" aria-labelledby="steps-title">
+      <div class="card-heading"><div class="qr-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></div><h2 id="steps-title"></h2></div>
+      <ol id="steps"><li></li><li></li></ol>
+      <div class="actions" id="actions">
+        <button id="resume" class="primary" type="button" hidden></button>
+        <button id="scan" class="primary" type="button" disabled>Scan employee pairing code</button>
+      </div>
+      <div class="feedback" id="feedback" hidden>
+        <p id="status" role="status" aria-live="polite"></p>
+        <button id="settings" class="secondary" type="button" hidden></button>
+      </div>
+    </section>
+    <footer id="footer"></footer>
   </main>
   <script type="module" src="./app.js"></script>
 </body>

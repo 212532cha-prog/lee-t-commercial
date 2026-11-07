@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild app.mjs --bundle --outfile=dist/app.js --format=esm && node -e \"require('node:fs').copyFileSync('index.html','dist/index.html')\"",
+    "build": "esbuild app.mjs --bundle --outfile=dist/app.js --format=esm && node -e \"for (const file of ['index.html','pairing.css']) require('node:fs').copyFileSync(file,'dist/'+file)\"",
     "android:prepare": "npm run build && node prepare-android.mjs"
   },
   "dependencies": {

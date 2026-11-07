@@ -18,6 +18,10 @@ import javax.net.ssl.X509TrustManager;
 final class WarehouseIdentityProbe {
     private WarehouseIdentityProbe() {}
 
+    static final class IdentityMismatch extends CertificateException {
+        IdentityMismatch(String message) { super(message); }
+    }
+
     static String httpsOrigin(String address) {
         if (address == null) return null;
         try {
@@ -111,10 +115,10 @@ final class WarehouseIdentityProbe {
                 try {
                     byte[] actual = MessageDigest.getInstance("SHA-256").digest(leaf.getEncoded());
                     if (leaf.getBasicConstraints() >= 0 || !MessageDigest.isEqual(expected, actual)) {
-                        throw new CertificateException("Warehouse certificate does not match the pairing code");
+                        throw new IdentityMismatch("Warehouse certificate does not match the pairing code");
                     }
                     if (logicalHost != null && !hasExactSan(leaf, logicalHost)) {
-                        throw new CertificateException("Warehouse certificate does not match the original host");
+                        throw new IdentityMismatch("Warehouse certificate does not match the original host");
                     }
                 } catch (java.security.NoSuchAlgorithmException error) {
                     throw new CertificateException(error);

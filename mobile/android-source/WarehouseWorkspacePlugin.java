@@ -1,15 +1,49 @@
 package my.leet.warehouse;
 
+import android.Manifest;
 import android.content.Intent;
+import android.net.Uri;
+import android.provider.Settings;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 
-@CapacitorPlugin(name = "WarehouseWorkspace")
+@CapacitorPlugin(name = "WarehouseWorkspace", permissions = {
+    @Permission(alias = "camera", strings = { Manifest.permission.CAMERA })
+})
 public class WarehouseWorkspacePlugin extends Plugin {
+    @PluginMethod
+    public void ensureCamera(PluginCall call) {
+        PermissionState state = getPermissionState("camera");
+        if (state == PermissionState.PROMPT || state == PermissionState.PROMPT_WITH_RATIONALE) {
+            requestPermissionForAlias("camera", call, "cameraResult");
+        } else {
+            cameraResult(call);
+        }
+    }
+
+    @PermissionCallback
+    private void cameraResult(PluginCall call) {
+        call.resolve(new JSObject().put("granted", getPermissionState("camera") == PermissionState.GRANTED));
+    }
+
+    @PluginMethod
+    public void openSettings(PluginCall call) {
+        try {
+            Uri application = Uri.fromParts("package", getContext().getPackageName(), null);
+            getActivity().startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, application));
+            call.resolve();
+        } catch (RuntimeException failure) {
+            call.reject("App settings are unavailable");
+        }
+    }
+
     @PluginMethod
     public void discover(PluginCall call) {
         String serverId = call.getString("serverId");
@@ -34,6 +68,12 @@ public class WarehouseWorkspacePlugin extends Plugin {
             if (response.body != null) result.put("data", new JSObject(response.body));
             call.resolve(result);
         } catch (Exception error) {
+            for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+                if (cause instanceof WarehouseIdentityProbe.IdentityMismatch) {
+                    call.reject("Warehouse certificate identity changed", "PAIRING_CERTIFICATE_MISMATCH");
+                    return;
+                }
+            }
             call.reject("Could not verify the warehouse certificate");
         }
     }
