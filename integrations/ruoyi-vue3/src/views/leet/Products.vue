@@ -177,7 +177,7 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
           <el-descriptions-item label="Category">{{ detail.categoryName }} <el-tag v-if="detail.categoryDeleted" type="info">Deleted</el-tag></el-descriptions-item>
           <el-descriptions-item label="Location">{{ locationPath(detail.locationId, masters.locations) || detail.locationName }}</el-descriptions-item>
           <el-descriptions-item label="Individual cost (RM)">{{ detail.individualCost }}</el-descriptions-item>
-          <el-descriptions-item label="Suppliers"><div v-for="row in detail.suppliers" :key="row.id || row.name">{{ row.name }}<span v-if="row.deleted"> (deleted)</span><span v-if="row.isDefault"> · Default</span></div></el-descriptions-item>
+          <el-descriptions-item label="Suppliers"><div v-for="(row, index) in detail.suppliers" :key="row.id || 'deleted-' + index">{{ row.name }}<span v-if="row.deleted"> (deleted)</span><span v-if="row.isDefault"> · Default</span></div></el-descriptions-item>
         </el-descriptions>
         <p><el-button :disabled="saving" @click="edit(detail)">Edit product</el-button>
         <el-button type="danger" :disabled="saving" @click="remove">Delete permanently</el-button></p>
