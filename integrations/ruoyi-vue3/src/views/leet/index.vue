@@ -211,6 +211,7 @@ onUnmounted(() => { activeRequest?.abort(); stateRequest?.abort(); clearInterval
 <style scoped>
 :global(:root) { --el-color-primary:#245de9;--el-color-primary-light-3:#658cf0;--el-color-primary-light-5:#90aaf4;--el-color-primary-light-7:#bbcafd;--el-color-primary-light-8:#d5e0fb;--el-color-primary-light-9:#edf2ff;--el-color-primary-dark-2:#1c4cc2;--el-border-radius-base:8px;--el-font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
 :global(.el-dialog) { border-radius:12px; }
+:global(input[type=file]::file-selector-button) { border:1px solid #dce2ec;border-radius:6px;padding:8px 12px;margin-right:12px;background:#fff;color:#46546d;font:inherit;cursor:pointer; }
 
 .warehouse-shell,.welcome-shell { --el-color-primary:#245de9;--el-border-radius-base:8px;--el-font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-family:var(--el-font-family);color:#18273e; }
 .warehouse-shell { min-height:100vh;background:#f3f6fb;display:grid;grid-template-columns:228px minmax(0,1fr); }
