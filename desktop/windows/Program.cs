@@ -11,6 +11,8 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using Microsoft.Win32;
 
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("LeeT.Desktop.Smoke")]
+
 namespace LeeT.Desktop;
 
 internal static class Program
@@ -31,18 +33,23 @@ internal static class Program
         }
 
         var application = new Application();
+        return application.Run(CreateWindow());
+    }
+
+    internal static Window CreateWindow()
+    {
         var window = new Window { Title = "LEE T Warehouse", Width = 1200, Height = 800, MinWidth = 420, MinHeight = 440 };
         var grid = new Grid();
-        var browser = new WebView2 { Visibility = Visibility.Collapsed };
+        var browser = new WebView2 { Name = "WarehouseBrowser", Visibility = Visibility.Collapsed };
         var status = new TextBlock { Text = "Starting the warehouse…", TextWrapping = TextWrapping.Wrap };
-        var retry = new Button { Content = "Retry", Visibility = Visibility.Collapsed, Margin = new Thickness(0, 14, 0, 0) };
+        var retry = new Button { Name = "RetryConnection", Content = "Retry", Visibility = Visibility.Collapsed, Margin = new Thickness(0, 14, 0, 0) };
         var panel = new StackPanel { Margin = new Thickness(24), VerticalAlignment = VerticalAlignment.Center, MaxWidth = 480 };
         panel.Children.Add(status);
         panel.Children.Add(retry);
         grid.Children.Add(browser);
         grid.Children.Add(panel);
         window.Content = grid;
-        using var closing = new CancellationTokenSource();
+        var closing = new CancellationTokenSource();
         CoreWebView2Environment? environment = null;
         var loading = false;
         var initialized = false;
@@ -101,7 +108,7 @@ internal static class Program
         window.Loaded += async (_, _) => await OpenWarehouse();
         retry.Click += async (_, _) => await OpenWarehouse();
         window.Closed += (_, _) => { closing.Cancel(); browser.Dispose(); };
-        return application.Run(window);
+        return window;
     }
 
     private static async Task WaitForWarehouse(CancellationToken cancellation)

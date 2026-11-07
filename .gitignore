@@ -48,5 +48,5 @@ WarehouseService.exe
 /mobile/android/
 
 # Windows desktop build outputs
-/desktop/windows/bin/
-/desktop/windows/obj/
+/desktop/**/bin/
+/desktop/**/obj/

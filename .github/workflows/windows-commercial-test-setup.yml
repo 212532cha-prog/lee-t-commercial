@@ -58,6 +58,13 @@ jobs:
             $probe = Start-Process -FilePath $desktop -ArgumentList '--check-runtime' -Wait -PassThru
           }
           if ($probe.ExitCode -ne 0) { throw 'Staged desktop cannot locate WebView2.' }
+      - name: Verify the desktop window and session
+        shell: powershell
+        run: |
+          $tests = Join-Path $env:RUNNER_TEMP 'leet-desktop-tests'
+          dotnet publish desktop/tests/LeeT.Desktop.Smoke.csproj -c Release -r win-x64 --self-contained true -o $tests
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop test build failed.' }
+          ./scripts/windows/Test-Desktop.ps1 -DesktopTestExecutable (Join-Path $tests 'LeeT.Desktop.Smoke.exe')
       - name: Build Windows test setup
         shell: powershell
         run: |
