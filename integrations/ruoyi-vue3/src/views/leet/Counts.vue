@@ -5,6 +5,7 @@ import { createCountClient } from './count-api.mjs'
 import { locationPath } from './location-path.mjs'
 
 const api = createCountClient()
+const emit = defineEmits(['export'])
 const mode = ref('tasks')
 const tasks = ref([])
 const reports = ref([])
@@ -210,6 +211,7 @@ onUnmounted(() => { disposed = true; selectionEpoch++; request?.abort() })
         <el-table-column prop="employeeName" label="Employee" min-width="130" /><el-table-column prop="productCount" label="Products" width="90" /><el-table-column prop="differenceCount" label="Differences" width="110" />
         <el-table-column label="Actions" min-width="270"><template #default="{row}"><div class="count-actions">
           <el-button :disabled="loading || saving" @click="view(row)">View report</el-button>
+          <el-button :disabled="loading || saving" @click="emit('export', {id:row.id,reportCode:row.reportCode,trashed:mode === 'trash'})">Export report</el-button>
           <el-button :disabled="loading || saving" @click="reportAction(row, mode === 'trash' ? 'restore' : 'trash')">{{ mode === 'trash' ? 'Restore report' : 'Move to trash' }}</el-button>
           <el-button v-if="mode === 'trash'" type="danger" :disabled="loading || saving" @click="reportAction(row, 'delete')">Delete permanently</el-button>
         </div></template></el-table-column>

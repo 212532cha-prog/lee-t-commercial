@@ -5,12 +5,14 @@ import MasterData from './MasterData.vue'
 import Products from './Products.vue'
 import Counts from './Counts.vue'
 import Costs from './Costs.vue'
+import Exports from './Exports.vue'
 import { createDashboardClient, formatCost } from './dashboard-api.mjs'
 import { loadWarehouseDashboard, createAdminTransport } from './warehouse-api.mjs'
 
 const api = createAdminTransport()
 const dashboardApi = createDashboardClient()
 const marking = ref(false)
+const exportScope = ref(null)
 const section = ref('overview')
 const dashboard = ref(null)
 const busy = ref(false)
@@ -21,7 +23,7 @@ const hasSession = ref(false)
 const username = ref('')
 const password = ref('')
 let activeRequest
-const navigation = { overview: 'Overview', products: 'Products', masters: 'Master data', counts: 'Stocktakes', costs: 'Product costs', team: 'Employees and devices' }
+const navigation = { overview: 'Overview', products: 'Products', masters: 'Master data', counts: 'Stocktakes', costs: 'Product costs', exports: 'Data export', team: 'Employees and devices' }
 const statistics = [
   ['productCount', 'Product types'], ['quantity', 'Total stock quantity'],
   ['totalValue', 'Total stock cost (RM)'], ['negativeCount', 'Negative-stock products'],
@@ -118,7 +120,7 @@ onUnmounted(() => { activeRequest?.abort(); password.value = '' })
     <aside class="warehouse-sidebar">
       <div class="warehouse-brand"><b>LEE T<span class="brand-dot"></span></b><span>WAREHOUSE</span></div>
       <p class="nav-caption">WORKSPACE</p>
-      <el-menu :default-active="section" @select="key => { section = key; error = '' }">
+      <el-menu :default-active="section" @select="key => { section = key; error = ''; exportScope = null }">
         <el-menu-item v-for="(label, key) in navigation" :key="key" :index="key"><span>{{ label }}</span></el-menu-item>
       </el-menu>
       <div class="sidebar-footer">Inventory · Stocktakes · People</div>
@@ -130,8 +132,9 @@ onUnmounted(() => { activeRequest?.abort(); password.value = '' })
         <Team v-if="section === 'team'" />
         <MasterData v-if="section === 'masters'" />
         <Products v-if="section === 'products'" />
-        <Counts v-if="section === 'counts'" />
+        <Counts v-if="section === 'counts'" @export="scope => { exportScope = scope; section = 'exports' }" />
         <Costs v-if="section === 'costs'" />
+        <Exports v-if="section === 'exports'" :key="exportScope?.id || 'all'" :scope="exportScope" />
         <template v-if="section === 'overview'">
           <div class="page-heading"><div><p class="eyebrow">WAREHOUSE OVERVIEW</p><h1>Warehouse overview</h1><p class="page-subtitle">Stock, reminders and recent activity.</p></div><el-button :disabled="busy" @click="refresh">Refresh stock</el-button></div>
           <div class="metrics-grid">
