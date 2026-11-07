@@ -159,7 +159,7 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
     <el-table :data="products" empty-text="No products">
       <el-table-column prop="productCode" label="Product code" min-width="140" />
       <el-table-column prop="name" label="Product" min-width="200" />
-      <el-table-column prop="categoryName" label="Category" min-width="140" />
+      <el-table-column label="Category" min-width="140"><template #default="{ row }">{{ row.categoryName }} <el-tag v-if="row.categoryDeleted" type="info">Deleted</el-tag></template></el-table-column>
       <el-table-column label="Location" min-width="140"><template #default="{ row }">{{ locationPath(row.locationId, masters.locations) || row.locationName }}</template></el-table-column>
       <el-table-column prop="quantity" label="Current stock" min-width="120" />
       <el-table-column label="Actions" width="110"><template #default="{ row }">
@@ -174,10 +174,10 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
         <el-descriptions :column="1" border>
           <el-descriptions-item label="Current stock">{{ detail.quantity }}</el-descriptions-item>
           <el-descriptions-item label="Minimum stock">{{ detail.minimumStock }}</el-descriptions-item>
-          <el-descriptions-item label="Category">{{ detail.categoryName }}</el-descriptions-item>
+          <el-descriptions-item label="Category">{{ detail.categoryName }} <el-tag v-if="detail.categoryDeleted" type="info">Deleted</el-tag></el-descriptions-item>
           <el-descriptions-item label="Location">{{ locationPath(detail.locationId, masters.locations) || detail.locationName }}</el-descriptions-item>
           <el-descriptions-item label="Individual cost (RM)">{{ detail.individualCost }}</el-descriptions-item>
-          <el-descriptions-item label="Suppliers">{{ detail.suppliers.map(row => row.name).join(', ') }}</el-descriptions-item>
+          <el-descriptions-item label="Suppliers"><div v-for="row in detail.suppliers" :key="row.id || row.name">{{ row.name }}<span v-if="row.deleted"> (deleted)</span><span v-if="row.isDefault"> · Default</span></div></el-descriptions-item>
         </el-descriptions>
         <p><el-button :disabled="saving" @click="edit(detail)">Edit product</el-button>
         <el-button type="danger" :disabled="saving" @click="remove">Delete permanently</el-button></p>
@@ -190,6 +190,7 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
         <el-form-item label="Category"><el-select v-model="draft.categoryId" :disabled="saving">
           <el-option v-for="row in masters.categories.filter(row => !row.deleted)" :key="row.id" :value="row.id" :label="row.name" />
         </el-select></el-form-item>
+        <p v-if="draft.id && !draft.categoryId && detail?.categoryDeleted">Previous category {{ detail.categoryName }} (deleted) will be retained.</p>
         <el-form-item label="Location"><el-select v-model="draft.locationId" :disabled="saving">
           <el-option v-for="row in masters.locations.filter(row => !row.deleted)" :key="row.id" :value="row.id" :label="locationPath(row.id, masters.locations)" />
         </el-select></el-form-item>
@@ -201,7 +202,7 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
         <el-form-item label="Default supplier"><el-select v-model="draft.defaultSupplierId" clearable :disabled="saving">
           <el-option v-for="row in masters.suppliers.filter(row => draft.supplierIds.includes(row.id))" :key="row.id" :value="row.id" :label="row.name" />
         </el-select></el-form-item>
-        <el-button type="primary" native-type="submit" :loading="saving" :disabled="!draft.name.trim() || !draft.categoryId">Save product</el-button>
+        <el-button type="primary" native-type="submit" :loading="saving" :disabled="!draft.name.trim() || (!draft.categoryId && !(draft.id && detail?.categoryDeleted))">Save product</el-button>
         <el-button :disabled="saving" @click="draft = null">Cancel</el-button>
         <p v-if="!draft.id">New products start with stock 0.</p>
         <el-alert v-if="error" :title="error" type="error" :closable="false" />

@@ -92,6 +92,11 @@ test('RuoYi product and master clients preserve stock, reject stale metadata and
   assert.equal(preserved.quantity, 7);
   assert.equal(preserved.individualCost, beforeMasterDeletion.individualCost);
   assert.equal(preserved.inventoryVersion, beforeMasterDeletion.inventoryVersion);
+  await api.save(linked.id, { ...input, name: 'Preserved deleted category', categoryId: null, locationId: UNASSIGNED, detailsVersion: preserved.detailsVersion });
+  const editedDeleted = await api.detail(linked.id);
+  assert.equal(editedDeleted.categoryDeleted, true);
+  assert.equal(editedDeleted.categoryName, 'Changed category');
+  assert.equal(editedDeleted.quantity, 7);
   await api.remove(product.id);
   await assert.rejects(api.detail(product.id), error => error.code === 'PRODUCT_NOT_FOUND');
 });

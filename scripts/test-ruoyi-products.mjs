@@ -96,6 +96,7 @@ try {
   await masterRow.getByRole('button', { name: 'Edit record', exact: true }).click();
   const editMaster = page.getByRole('dialog', { name: 'Edit master data', exact: true });
   const master = (await catalog.masters()).categories.find(row => row.name === 'Browser category');
+  const linkedMasterProduct = await seed.create({ ...input, name: 'Product with removed category', categoryId: master.id });
   await seed.editMaster('categories', master.id, { name: 'Category changed elsewhere', revision: master.revision });
   await editMaster.getByRole('textbox').first().fill('Stale master change');
   await editMaster.getByRole('button', { name: 'Save record', exact: true }).click();
@@ -112,6 +113,22 @@ try {
   const builtIn = page.locator('.el-table__row').filter({ hasText: 'Built-in location' });
   await builtIn.waitFor();
   assert.equal(await builtIn.getByRole('button').count(), 0);
+  await page.getByRole('menuitem', { name: 'Products', exact: true }).click();
+  await page.locator('.el-table__row').filter({ hasText: 'Product with removed category' }).getByRole('button', { name: 'Details', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Product details', exact: true }).getByRole('button', { name: 'Edit product', exact: true }).click();
+  const retainedEditor = page.getByRole('dialog', { name: 'Edit product', exact: true });
+  await retainedEditor.getByText('Previous category Category changed elsewhere (deleted) will be retained.', { exact: true }).waitFor();
+  await retainedEditor.getByRole('textbox').first().fill('Retained deleted category');
+  await retainedEditor.getByRole('button', { name: 'Save product', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Product details', exact: true }).getByRole('heading', { name: 'Retained deleted category', exact: true }).waitFor();
+  const retainedProduct = await catalog.detail(linkedMasterProduct.id);
+  assert.equal(retainedProduct.categoryDeleted, true);
+  assert.equal(retainedProduct.categoryName, 'Category changed elsewhere');
+  assert.equal(retainedProduct.quantity, 0);
+  const retainedDetails = page.getByRole('dialog', { name: 'Product details', exact: true });
+  await retainedDetails.locator('button:not([disabled])').filter({ hasText: 'Edit product' }).waitFor();
+  await retainedDetails.locator('.el-dialog__headerbtn').click();
+
   await page.waitForFunction(() => [...globalThis.document.querySelectorAll('.el-overlay')].every(element => element.getClientRects().length === 0));
 
   await page.screenshot({ path: process.argv[3] || join(directory, 'products.png'), fullPage: true });
