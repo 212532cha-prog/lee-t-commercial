@@ -29,7 +29,7 @@ const errors = {
 }
 
 function report(failure) {
-  error.value = errors[failure.message] || 'The operation could not complete. Check the connection and retry.'
+  error.value = errors[failure.message] || 'The operation could not be confirmed. Refresh products and check the saved record before submitting again.'
 }
 
 async function load(append = false) {

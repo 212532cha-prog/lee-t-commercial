@@ -11,20 +11,30 @@ export async function loadWarehouseDashboard({ request = globalThis.fetch, signa
   return dashboard;
 }
 
-export function createAdminTransport({ request = globalThis.fetch } = {}) {
+export function createAdminTransport({ request = globalThis.fetch, timeoutMs = 30000 } = {}) {
   async function read(path, { signal, method = 'GET', data, headers = {} } = {}) {
-    const response = await request(path, {
-      method, signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error',
-      headers: { Accept: 'application/json', ...headers, ...(data && { 'Content-Type': 'application/json' }) },
-      ...(data && { body: JSON.stringify(data) }),
-    });
-    const body = await response.json();
-    if (!response.ok) {
-      const error = new Error(response.status === 401 ? 'LOGIN_REQUIRED' : response.status === 403 ? 'ADMIN_REQUIRED' : body.error || 'WAREHOUSE_UNAVAILABLE');
-      error.code = body.error;
-      throw error;
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    const timer = setTimeout(abort, timeoutMs);
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    try {
+      const response = await request(path, {
+        method, signal: controller.signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+        headers: { Accept: 'application/json', ...headers, ...(data && { 'Content-Type': 'application/json' }) },
+        ...(data && { body: JSON.stringify(data) }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        const error = new Error(response.status === 401 ? 'LOGIN_REQUIRED' : response.status === 403 ? 'ADMIN_REQUIRED' : body.error || 'WAREHOUSE_UNAVAILABLE');
+        error.code = body.error;
+        throw error;
+      }
+      return body;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
     }
-    return body;
   }
 
   async function write(path, options) {
