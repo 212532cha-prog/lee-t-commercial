@@ -12,6 +12,7 @@ on:
       - 'scripts/test-ruoyi-exports.mjs'
       - 'scripts/test-ruoyi-profile.mjs'
       - 'scripts/test-ruoyi-backups.mjs'
+      - 'scripts/test-ruoyi-product-assets.mjs'
       - 'src/auth/**'
       - 'src/catalog/**'
       - 'src/stock/**'
@@ -20,6 +21,7 @@ on:
       - 'src/profile/**'
       - 'src/backup/**'
       - 'scripts/inspect-xlsx.py'
+      - 'tests/helpers/product-workbook.mjs'
       - 'src/dashboard/**'
       - 'tests/ruoyi-*.test.mjs'
       - '.github/workflows/ruoyi-admin.yml'
@@ -35,6 +37,7 @@ on:
       - 'scripts/test-ruoyi-exports.mjs'
       - 'scripts/test-ruoyi-profile.mjs'
       - 'scripts/test-ruoyi-backups.mjs'
+      - 'scripts/test-ruoyi-product-assets.mjs'
       - 'src/auth/**'
       - 'src/catalog/**'
       - 'src/stock/**'
@@ -43,6 +46,7 @@ on:
       - 'src/profile/**'
       - 'src/backup/**'
       - 'scripts/inspect-xlsx.py'
+      - 'tests/helpers/product-workbook.mjs'
       - 'src/dashboard/**'
       - 'tests/ruoyi-*.test.mjs'
       - '.github/workflows/ruoyi-admin.yml'
@@ -104,6 +108,8 @@ jobs:
         run: node scripts/test-ruoyi-profile.mjs "${{ runner.temp }}/ruoyi-admin"
       - name: Verify backup recovery and restricted navigation
         run: node scripts/test-ruoyi-backups.mjs "${{ runner.temp }}/ruoyi-admin"
+      - name: Verify product photos, QR printing and Excel preview imports
+        run: node scripts/test-ruoyi-product-assets.mjs "${{ runner.temp }}/ruoyi-admin"
       - uses: actions/upload-artifact@v4
         with:
           name: LEE-T-RuoYi-management-candidate

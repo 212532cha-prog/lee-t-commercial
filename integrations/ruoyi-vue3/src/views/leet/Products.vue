@@ -1,6 +1,8 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import InventoryHistory from './InventoryHistory.vue'
+import ProductAssets from './ProductAssets.vue'
+import ProductImport from './ProductImport.vue'
 import { ElMessageBox } from 'element-plus'
 import { locationPath } from './location-path.mjs'
 import { createProductClient } from './product-api.mjs'
@@ -18,6 +20,9 @@ const notice = ref('')
 const detail = ref(null)
 const draft = ref(null)
 const historyProduct = ref(null)
+const importing = ref(false)
+const selectedLabels = ref([])
+const batchUrl = computed(() => '/api/products/qr/print-batch?' + new URLSearchParams(selectedLabels.value.map(id => ['id',id])))
 let activeRequest
 let disposed = false
 const errors = {
@@ -40,7 +45,7 @@ async function load(append = false) {
   activeRequest = controller
   busy.value = true
   error.value = ''
-  if (!append) { products.value = []; cursor.value = null }
+  if (!append) { products.value = []; cursor.value = null; selectedLabels.value = [] }
   try {
     const result = await api.list({ categoryId: categoryId.value, locationId: locationId.value, cursor: append ? cursor.value : null, signal: controller.signal })
     if (controller.signal.aborted) return
@@ -121,6 +126,16 @@ function closeHistory() {
   refreshAfterStock()
 }
 
+function selectLabel(id,checked) {
+  if (checked && selectedLabels.value.length < 50 && !selectedLabels.value.includes(id)) selectedLabels.value.push(id)
+  if (!checked) selectedLabels.value = selectedLabels.value.filter(value => value !== id)
+}
+async function imported(count) {
+  importing.value = false
+  notice.value = count + ' products imported with stock 0.'
+  await load()
+}
+
 async function remove() {
   if (saving.value) return
   const id = detail.value.id
@@ -175,8 +190,11 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
       </el-select>
       <el-button :disabled="busy || saving" @click="initialize">Refresh</el-button>
       <el-button type="primary" :disabled="busy || saving" @click="edit(null)">Add product</el-button>
+      <el-button :disabled="busy || saving" @click="importing = true">Import products</el-button>
+      <a :href="batchUrl" target="_blank" rel="noopener" class="batch-print" :aria-disabled="!selectedLabels.length || busy || saving" @click="(!selectedLabels.length || busy || saving) && $event.preventDefault()">Print selected QR ({{ selectedLabels.length }}/50)</a>
     </div>
     <el-table :data="products" empty-text="No products">
+      <el-table-column label="Labels" width="80"><template #default="{row}"><input type="checkbox" :aria-label="'Select QR label for '+row.productCode" :checked="selectedLabels.includes(row.id)" :disabled="busy || saving || !selectedLabels.includes(row.id) && selectedLabels.length >= 50" @change="selectLabel(row.id,$event.target.checked)"></template></el-table-column>
       <el-table-column prop="productCode" label="Product code" min-width="140" />
       <el-table-column prop="name" label="Product" min-width="200" />
       <el-table-column label="Category" min-width="140"><template #default="{ row }">{{ row.categoryName }} <el-tag v-if="row.categoryDeleted" type="info">Deleted</el-tag></template></el-table-column>
@@ -189,8 +207,8 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
     <el-button v-if="cursor" :disabled="busy || saving" @click="load(true)">Load more</el-button>
     <el-dialog :model-value="!!detail" title="Product details" :close-on-click-modal="false" :before-close="done => { if (!saving) { detail = null; done() } }">
       <template v-if="detail">
-        <img v-if="detail.hasPhoto" class="catalog-photo" :src="'/api/products/' + detail.id + '/photo'" :alt="detail.name">
         <h2>{{ detail.name }}</h2><p>{{ detail.productCode }}</p>
+        <ProductAssets :key="detail.id" :product="detail" @busy="value => saving = value" @updated="refreshAfterStock" />
         <el-descriptions :column="1" border>
           <el-descriptions-item label="Current stock">{{ detail.quantity }}</el-descriptions-item>
           <el-descriptions-item label="Minimum stock">{{ detail.minimumStock }}</el-descriptions-item>
@@ -205,6 +223,7 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
       </template>
     </el-dialog>
     <InventoryHistory v-if="historyProduct" :key="historyProduct" :product-id="historyProduct" @close="closeHistory" @updated="refreshAfterStock" />
+    <ProductImport v-if="importing" :categories="masters.categories" :initial-category="categoryId" @close="importing = false" @imported="imported" />
     <el-dialog :model-value="!!draft" :title="draft?.id ? 'Edit product' : 'Add product'" :close-on-click-modal="false" :before-close="done => { if (!saving) { draft = null; done() } }">
       <el-form v-if="draft" label-position="top" @submit.prevent="save">
         <el-form-item label="Name"><el-input v-model="draft.name" maxlength="128" :disabled="saving" /></el-form-item>
@@ -236,5 +255,5 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
 <style scoped>
 .catalog-toolbar { display: flex; flex-wrap: wrap; gap: 12px; margin: 20px 0; }
 .catalog-toolbar .el-select { width: 200px; }
-.catalog-photo { max-width: 220px; max-height: 220px; object-fit: contain; }
+.batch-print { display:inline-flex;align-items:center;padding:8px 14px;border:1px solid #dce2ec;border-radius:8px;color:#46546d;font-size:12px;text-decoration:none;background:white; }.batch-print[aria-disabled=true] { opacity:.5;pointer-events:none; }
 </style>
