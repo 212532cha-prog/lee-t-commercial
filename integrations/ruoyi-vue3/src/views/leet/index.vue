@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
+import Team from './Team.vue'
 import MasterData from './MasterData.vue'
 import Products from './Products.vue'
 import { loadWarehouseDashboard } from './warehouse-api.mjs'
@@ -53,7 +54,9 @@ onUnmounted(() => activeRequest?.abort())
       <el-menu-item index="overview">Overview</el-menu-item>
       <el-menu-item index="products">Products</el-menu-item>
       <el-menu-item index="masters">Master data</el-menu-item>
+      <el-menu-item index="team">Employees and devices</el-menu-item>
     </el-menu>
+    <Team v-if="dashboard && section === 'team'" />
     <MasterData v-if="dashboard && section === 'masters'" />
     <Products v-if="dashboard && section === 'products'" />
     <template v-if="dashboard && section === 'overview'">

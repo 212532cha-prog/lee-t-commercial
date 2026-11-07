@@ -1,25 +1,7 @@
-export function createProductClient({ request = globalThis.fetch } = {}) {
-  async function read(path, { signal, method = 'GET', data, headers = {} } = {}) {
-    const response = await request(path, {
-      method, signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error',
-      headers: { Accept: 'application/json', ...headers, ...(data && { 'Content-Type': 'application/json' }) },
-      ...(data && { body: JSON.stringify(data) }),
-    });
-    const body = await response.json();
-    if (!response.ok) {
-      const error = new Error(response.status === 401 ? 'LOGIN_REQUIRED' : response.status === 403 ? 'ADMIN_REQUIRED' : body.error || 'WAREHOUSE_UNAVAILABLE');
-      error.code = body.error;
-      throw error;
-    }
-    return body;
-  }
+import { createAdminTransport } from './warehouse-api.mjs';
 
-  async function write(path, options) {
-    const session = await read('/api/me');
-    if (session.user?.role !== 'admin') throw Error('ADMIN_REQUIRED');
-    return read(path, { ...options, headers: { ...options.headers, 'X-CSRF-Token': session.csrf } });
-  }
-
+export function createProductClient(options = {}) {
+  const { read, write } = createAdminTransport(options);
   return {
     masters(signal) {
       return read('/api/master-data', { signal });
