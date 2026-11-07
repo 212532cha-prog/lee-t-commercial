@@ -20,10 +20,13 @@ try {
  }
  if(-not $started){throw 'Desktop HTTPS fixture did not start.'}
  $test=Start-Process -FilePath $DesktopTestExecutable -PassThru -RedirectStandardOutput (Join-Path $temporary 'stdout.log') -RedirectStandardError (Join-Path $temporary 'stderr.log')
+ [void]$test.Handle
  if(-not $test.WaitForExit(120000)){throw 'Desktop test timed out.'}
+ $test.Refresh()
  Get-Content -LiteralPath (Join-Path $temporary 'stdout.log')
  Get-Content -LiteralPath (Join-Path $temporary 'stderr.log')
- if($test.ExitCode -ne 0){throw 'Desktop window tests failed.'}
+ Write-Output ('Desktop process exit code: '+$test.ExitCode)
+ if($null -eq $test.ExitCode -or $test.ExitCode -ne 0){throw 'Desktop window tests failed.'}
 } finally {
  foreach($process in @($test,$fixture)){if($process -and -not $process.HasExited){Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue}}
  Remove-Item Env:LEET_DESKTOP_TEST_PFX,Env:LEET_DESKTOP_TEST_PASSPHRASE -ErrorAction SilentlyContinue

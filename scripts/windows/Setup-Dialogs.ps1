@@ -1,6 +1,7 @@
 function New-SetupPasswordWindow {
  Add-Type -AssemblyName PresentationFramework
  $window=New-Object Windows.Window
+ [Windows.NameScope]::SetNameScope($window,(New-Object Windows.NameScope))
  $window.Title='LEE T Warehouse setup'
  $window.Width=440
  $window.SizeToContent='Height'
