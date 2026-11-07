@@ -6,6 +6,7 @@ import Products from './Products.vue'
 import Counts from './Counts.vue'
 import Costs from './Costs.vue'
 import Exports from './Exports.vue'
+import Profile from './Profile.vue'
 import { createDashboardClient, formatCost } from './dashboard-api.mjs'
 import { loadWarehouseDashboard, createAdminTransport } from './warehouse-api.mjs'
 
@@ -23,7 +24,7 @@ const hasSession = ref(false)
 const username = ref('')
 const password = ref('')
 let activeRequest
-const navigation = { overview: 'Overview', products: 'Products', masters: 'Master data', counts: 'Stocktakes', costs: 'Product costs', exports: 'Data export', team: 'Employees and devices' }
+const navigation = { overview: 'Overview', products: 'Products', masters: 'Master data', counts: 'Stocktakes', costs: 'Product costs', exports: 'Data export', team: 'Employees and devices', profile: 'My account' }
 const statistics = [
   ['productCount', 'Product types'], ['quantity', 'Total stock quantity'],
   ['totalValue', 'Total stock cost (RM)'], ['negativeCount', 'Negative-stock products'],
@@ -135,6 +136,7 @@ onUnmounted(() => { activeRequest?.abort(); password.value = '' })
         <Counts v-if="section === 'counts'" @export="scope => { exportScope = scope; section = 'exports' }" />
         <Costs v-if="section === 'costs'" />
         <Exports v-if="section === 'exports'" :key="exportScope?.id || 'all'" :scope="exportScope" />
+        <Profile v-if="section === 'profile'" @signed-out="refresh" />
         <template v-if="section === 'overview'">
           <div class="page-heading"><div><p class="eyebrow">WAREHOUSE OVERVIEW</p><h1>Warehouse overview</h1><p class="page-subtitle">Stock, reminders and recent activity.</p></div><el-button :disabled="busy" @click="refresh">Refresh stock</el-button></div>
           <div class="metrics-grid">

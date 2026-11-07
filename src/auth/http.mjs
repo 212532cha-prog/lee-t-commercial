@@ -85,7 +85,7 @@ export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=
    if(stockRoutes&&await stockRoutes({req,res,path:url,search:parsed.searchParams,raw,csrf,json,body}))return;
    if(catalogRoutes&&await catalogRoutes({req,res,path:url,search:parsed.searchParams,raw,csrf,json,body}))return;
    json(res,404,{error:'NOT_FOUND'});
-  }catch(error){if(res.headersSent){res.destroy();return;}if(error.status===401)res.setHeader('Set-Cookie',clearCookie());json(res,error instanceof AuthError?error.status:500,{error:error instanceof AuthError?error.code:'INTERNAL_ERROR'});}
+  }catch(error){if(res.headersSent){res.destroy();return;}const wrongCurrentPassword=url==='/api/me/password'&&req.method==='POST'&&error instanceof AuthError&&error.code==='INVALID_CREDENTIALS';if(error.status===401&&!wrongCurrentPassword)res.setHeader('Set-Cookie',clearCookie());json(res,error instanceof AuthError?error.status:500,{error:error instanceof AuthError?error.code:'INTERNAL_ERROR'});}
  });
  server.closeStreams=()=>{for(const res of responses)if(String(res.getHeader('Content-Type')).startsWith('text/event-stream'))res.end('data: '+JSON.stringify({error:'COUNT_RESTART_REQUIRED'})+'\n\n');};
  return server;
