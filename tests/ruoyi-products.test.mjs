@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { StockService } from '../src/stock/service.mjs';
 import { PhotoStore } from '../src/catalog/files.mjs';
 import { once } from 'node:events';
 import { testPool } from './helpers/database.mjs';
@@ -64,6 +65,10 @@ test('RuoYi product and master clients preserve stock, reject stale metadata and
   const child = await api.saveMaster('locations', null, { name: 'Shelf A1', parentId: parent.id });
   const supplier = await api.saveMaster('suppliers', null, { name: 'Supply A' });
   const linked = await api.save(null, { ...input, name: 'Linked bolt', locationId: child.id, supplierIds: [supplier.id], defaultSupplierId: supplier.id });
+  await new StockService(pool, auth).commit(admin.token, admin.csrf, {
+    requestId: randomUUID(), kind: 'inbound', items: [{ productId: linked.id, quantity: 7 }],
+  });
+  const beforeMasterDeletion = await api.detail(linked.id);
   const current = await api.masters();
   const categoryBefore = current.categories.find(row => row.id === category.id);
   await api.saveMaster('categories', category.id, { name: 'Changed category', revision: categoryBefore.revision });
@@ -84,7 +89,9 @@ test('RuoYi product and master clients preserve stock, reject stale metadata and
   assert.equal(preserved.suppliers[0].name, 'Supply A');
   assert.equal(preserved.suppliers[0].deleted, true);
   assert.equal(preserved.locationId, UNASSIGNED);
-  assert.equal(preserved.quantity, 0);
+  assert.equal(preserved.quantity, 7);
+  assert.equal(preserved.individualCost, beforeMasterDeletion.individualCost);
+  assert.equal(preserved.inventoryVersion, beforeMasterDeletion.inventoryVersion);
   await api.remove(product.id);
   await assert.rejects(api.detail(product.id), error => error.code === 'PRODUCT_NOT_FOUND');
 });
