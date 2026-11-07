@@ -55,6 +55,9 @@ begin
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  DataDrive, AppDrive, DataPath, AppPath: String;
+  FreeBytes, TotalBytes: Int64;
 begin
   Result := '';
   if DirExists(ExpandConstant('{app}')) or DirExists(DataPage.Values[0]) then
@@ -68,6 +71,35 @@ begin
     Result := 'Select the issuer public key and enter its key ID.'
   else if Pos('"', OptionsPage.Values[0]) > 0 then
     Result := 'Quotes are not allowed in the issuer ID.';
+  if Result <> '' then Exit;
+  DataDrive := ExtractFileDrive(DataPage.Values[0]);
+  if (Length(DataDrive) <> 2) or (Pos(':\', DataPage.Values[0]) <> 2) or
+      (Pos('"', DataPage.Values[0]) > 0) then begin
+    Result := 'Choose an absolute directory on a local data drive.';
+    Exit;
+  end;
+  DataPath := Lowercase(AddBackslash(ExpandFileName(DataPage.Values[0])));
+  AppPath := Lowercase(AddBackslash(ExpandConstant('{app}')));
+  if (DataPath = Lowercase(AddBackslash(DataDrive))) or
+      (Pos(DataPath, AppPath) = 1) or (Pos(AppPath, DataPath) = 1) then begin
+    Result := 'Choose a dedicated data directory outside the application directory.';
+    Exit;
+  end;
+  if RegKeyExists(HKLM, 'SYSTEM\CurrentControlSet\Services\LeeTCommercialWarehouse') or
+      RegKeyExists(HKLM, 'SYSTEM\CurrentControlSet\Services\LeeTPostgreSQL17') then begin
+    Result := 'An existing LEE T service was found. Use the update or migration procedure to protect its data.';
+    Exit;
+  end;
+  if not GetSpaceOnDisk64(AddBackslash(DataDrive), FreeBytes, TotalBytes) then
+    Result := 'Cannot check the selected data drive.'
+  else if FreeBytes < 2147483648 then
+    Result := 'The data drive needs at least 2 GB free. Choose another drive or free space first.';
+  if Result <> '' then Exit;
+  AppDrive := AddBackslash(ExtractFileDrive(ExpandConstant('{app}')));
+  if not GetSpaceOnDisk64(AppDrive, FreeBytes, TotalBytes) then
+    Result := 'Cannot check the application drive.'
+  else if FreeBytes < 1073741824 then
+    Result := 'The application drive needs at least 1 GB free. Select another drive or free space first.';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

@@ -87,7 +87,8 @@ internal static class Program
                             panel.Visibility = Visibility.Collapsed;
                             browser.Visibility = Visibility.Visible;
                         }
-                        else ShowFailure("The warehouse page could not open. Check that the local service and certificate are ready, then retry.");
+                        else if (result.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled)
+                            ShowFailure("The warehouse page could not open. Check that the local service and certificate are ready, then retry.");
                     };
                     initialized = true;
                 }

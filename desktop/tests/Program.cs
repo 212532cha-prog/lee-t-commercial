@@ -44,6 +44,8 @@ internal static class Smoke
                 };
                 browser.CoreWebView2.Navigate("https://example.invalid/");
                 Require(await navigation.Task.WaitAsync(TimeSpan.FromSeconds(10)), "External navigation was not blocked.");
+                await Task.Delay(300);
+                Require(browser.Visibility == Visibility.Visible, "Blocked navigation must keep the current workspace visible.");
                 Require(new Uri(browser.CoreWebView2.Source).Host == "localhost", "External page replaced the warehouse.");
                 Console.WriteLine("Desktop service recovery, real WebView2 rendering, session reload and external navigation checks passed.");
                 application.Shutdown(0);
