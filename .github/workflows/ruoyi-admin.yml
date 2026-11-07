@@ -6,8 +6,10 @@ on:
       - 'integrations/ruoyi-vue3/**'
       - 'scripts/test-ruoyi-products.mjs'
       - 'scripts/test-ruoyi-team.mjs'
+      - 'scripts/test-ruoyi-inventory.mjs'
       - 'src/auth/**'
       - 'src/catalog/**'
+      - 'src/stock/**'
       - 'src/dashboard/**'
       - 'tests/ruoyi-*.test.mjs'
       - '.github/workflows/ruoyi-admin.yml'
@@ -17,8 +19,10 @@ on:
       - 'integrations/ruoyi-vue3/**'
       - 'scripts/test-ruoyi-products.mjs'
       - 'scripts/test-ruoyi-team.mjs'
+      - 'scripts/test-ruoyi-inventory.mjs'
       - 'src/auth/**'
       - 'src/catalog/**'
+      - 'src/stock/**'
       - 'src/dashboard/**'
       - 'tests/ruoyi-*.test.mjs'
       - '.github/workflows/ruoyi-admin.yml'
@@ -63,6 +67,8 @@ jobs:
         run: node scripts/test-ruoyi-products.mjs "${{ runner.temp }}/ruoyi-admin"
       - name: Verify employee and device workflows against PostgreSQL
         run: node scripts/test-ruoyi-team.mjs "${{ runner.temp }}/ruoyi-admin"
+      - name: Verify inventory history and quantity recovery against PostgreSQL
+        run: node scripts/test-ruoyi-inventory.mjs "${{ runner.temp }}/ruoyi-admin"
       - uses: actions/upload-artifact@v4
         with:
           name: LEE-T-RuoYi-management-candidate

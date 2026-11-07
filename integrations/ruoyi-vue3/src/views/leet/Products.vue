@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
+import InventoryHistory from './InventoryHistory.vue'
 import { ElMessageBox } from 'element-plus'
 import { locationPath } from './location-path.mjs'
 import { createProductClient } from './product-api.mjs'
@@ -16,6 +17,7 @@ const error = ref('')
 const notice = ref('')
 const detail = ref(null)
 const draft = ref(null)
+const historyProduct = ref(null)
 let activeRequest
 let disposed = false
 const errors = {
@@ -101,6 +103,24 @@ async function save() {
   }
 }
 
+async function refreshAfterStock() {
+  const id = detail.value?.id
+  if (id) {
+    try {
+      const current = await api.detail(id)
+      if (!disposed && detail.value?.id === id) detail.value = current
+    } catch (failure) {
+      if (!disposed) report(failure)
+    }
+  }
+  if (!disposed) await load()
+}
+
+function closeHistory() {
+  historyProduct.value = null
+  refreshAfterStock()
+}
+
 async function remove() {
   if (saving.value) return
   const id = detail.value.id
@@ -179,10 +199,12 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
           <el-descriptions-item label="Individual cost (RM)">{{ detail.individualCost }}</el-descriptions-item>
           <el-descriptions-item label="Suppliers"><div v-for="(row, index) in detail.suppliers" :key="row.id || 'deleted-' + index">{{ row.name }}<span v-if="row.deleted"> (deleted)</span><span v-if="row.isDefault"> · Default</span></div></el-descriptions-item>
         </el-descriptions>
-        <p><el-button :disabled="saving" @click="edit(detail)">Edit product</el-button>
+        <p><el-button :disabled="saving" @click="historyProduct = detail.id">Stock history</el-button>
+        <el-button :disabled="saving" @click="edit(detail)">Edit product</el-button>
         <el-button type="danger" :disabled="saving" @click="remove">Delete permanently</el-button></p>
       </template>
     </el-dialog>
+    <InventoryHistory v-if="historyProduct" :key="historyProduct" :product-id="historyProduct" @close="closeHistory" @updated="refreshAfterStock" />
     <el-dialog :model-value="!!draft" :title="draft?.id ? 'Edit product' : 'Add product'" :close-on-click-modal="false" :before-close="done => { if (!saving) { draft = null; done() } }">
       <el-form v-if="draft" label-position="top" @submit.prevent="save">
         <el-form-item label="Name"><el-input v-model="draft.name" maxlength="128" :disabled="saving" /></el-form-item>
