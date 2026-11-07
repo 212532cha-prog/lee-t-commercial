@@ -170,10 +170,16 @@ test('bundled Android workspace dispatches employee login, stock writes and live
  await context.addInitScript(()=>{
   const streams=new Map();
   const paths=[];
+  let rejectLogin=true;
   globalThis.nativePaths=paths;
   globalThis.LeeTWarehouse={
    async request(id,method,path,body,csrf){
     paths.push(path);
+    if(path==='/api/auth/login'&&rejectLogin){
+     rejectLogin=false;
+     globalThis.leetNativeReceive(id,'response',403,JSON.stringify({error:'ORIGIN_REJECTED'}));
+     return;
+    }
     try{
      const headers={...(body!==null?{'Content-Type':'application/json'}:{}),...(csrf?{'X-CSRF-Token':csrf}:{})};
      const response=await fetch(path,{method,headers,body:body??undefined});
@@ -196,6 +202,8 @@ test('bundled Android workspace dispatches employee login, stock writes and live
  await page.locator('#language').selectOption('zh');
  await page.locator('#username').fill('staff');
  await page.locator('#password').fill(password);
+ await page.locator('#login button').click();
+ await page.locator('#message').getByText(/403 ORIGIN_REJECTED/).waitFor();
  await page.locator('#login button').click();
  await page.locator('.workspace').waitFor();
  const seed=new CatalogService(pool),token=(await seed.detail(p.id)).qrToken;
