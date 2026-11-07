@@ -4,9 +4,13 @@ import Team from './Team.vue'
 import MasterData from './MasterData.vue'
 import Products from './Products.vue'
 import Counts from './Counts.vue'
+import Costs from './Costs.vue'
+import { createDashboardClient, formatCost } from './dashboard-api.mjs'
 import { loadWarehouseDashboard, createAdminTransport } from './warehouse-api.mjs'
 
 const api = createAdminTransport()
+const dashboardApi = createDashboardClient()
+const marking = ref(false)
 const section = ref('overview')
 const dashboard = ref(null)
 const busy = ref(false)
@@ -17,7 +21,7 @@ const hasSession = ref(false)
 const username = ref('')
 const password = ref('')
 let activeRequest
-const navigation = { overview: 'Overview', products: 'Products', masters: 'Master data', counts: 'Stocktakes', team: 'Employees and devices' }
+const navigation = { overview: 'Overview', products: 'Products', masters: 'Master data', counts: 'Stocktakes', costs: 'Product costs', team: 'Employees and devices' }
 const statistics = [
   ['productCount', 'Product types'], ['quantity', 'Total stock quantity'],
   ['totalValue', 'Total stock cost (RM)'], ['negativeCount', 'Negative-stock products'],
@@ -93,6 +97,18 @@ async function signOut() {
   } finally { busy.value = false }
 }
 
+async function markRead(row) {
+  if (marking.value || busy.value) return
+  marking.value = true
+  error.value = ''
+  try {
+    await dashboardApi.markRead(row.id, row.notificationToken)
+    await refresh()
+  } catch (failure) {
+    error.value = failure.code === 'NOTIFICATION_CHANGED' ? 'This stock reminder changed. Refresh stock to see the latest alert.' : 'The read status could not be confirmed. Refresh stock and retry.'
+  } finally { marking.value = false }
+}
+
 onMounted(refresh)
 onUnmounted(() => { activeRequest?.abort(); password.value = '' })
 </script>
@@ -115,16 +131,17 @@ onUnmounted(() => { activeRequest?.abort(); password.value = '' })
         <MasterData v-if="section === 'masters'" />
         <Products v-if="section === 'products'" />
         <Counts v-if="section === 'counts'" />
+        <Costs v-if="section === 'costs'" />
         <template v-if="section === 'overview'">
           <div class="page-heading"><div><p class="eyebrow">WAREHOUSE OVERVIEW</p><h1>Warehouse overview</h1><p class="page-subtitle">Stock, reminders and recent activity.</p></div><el-button :disabled="busy" @click="refresh">Refresh stock</el-button></div>
           <div class="metrics-grid">
             <article v-for="([key, label], index) in statistics" :key="key" class="metric-card" :class="{ 'metric-warning': key === 'negativeCount' && dashboard.statistics[key] }">
-              <span class="metric-index">0{{ index + 1 }}</span><p>{{ label }}</p><strong>{{ key === 'totalValue' ? 'RM ' : '' }}{{ dashboard.statistics[key] }}</strong>
+              <span class="metric-index">0{{ index + 1 }}</span><p>{{ label }}</p><strong>{{ key === 'totalValue' ? formatCost(dashboard.statistics[key]) : dashboard.statistics[key] }}</strong>
             </article>
           </div>
           <div class="overview-grid">
             <section class="surface"><div class="surface-heading"><h2>Negative stock</h2><el-tag type="danger" effect="plain">{{ dashboard.negative.length }}</el-tag></div>
-              <el-table :data="dashboard.negative" :max-height="320" empty-text="No negative stock"><el-table-column prop="productCode" label="Product code" /><el-table-column prop="name" label="Product" /><el-table-column prop="quantity" label="Stock" width="90" /></el-table>
+              <el-table :data="dashboard.negative" :max-height="320" empty-text="No negative stock"><el-table-column prop="productCode" label="Product code" min-width="130" /><el-table-column prop="name" label="Product" min-width="130" /><el-table-column prop="quantity" label="Stock" width="80" /><el-table-column label="Reminder" min-width="140"><template #default="{row}"><el-tag v-if="row.read" type="info">Read</el-tag><el-button v-else-if="row.notificationToken" :disabled="busy || marking" @click="markRead(row)">Mark as read</el-button></template></el-table-column></el-table>
             </section>
             <section class="surface"><div class="surface-heading"><h2>Reorder reminders</h2><el-tag type="warning" effect="plain">{{ dashboard.low.length }}</el-tag></div>
               <el-table :data="dashboard.low" :max-height="320" empty-text="No reorder reminders"><el-table-column prop="name" label="Product" /><el-table-column prop="quantity" label="Stock" width="90" /><el-table-column prop="minimumStock" label="Minimum" width="95" /></el-table>
