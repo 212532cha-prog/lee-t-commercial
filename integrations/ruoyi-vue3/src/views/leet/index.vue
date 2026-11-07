@@ -7,6 +7,7 @@ import Counts from './Counts.vue'
 import Costs from './Costs.vue'
 import Exports from './Exports.vue'
 import Profile from './Profile.vue'
+import Backups from './Backups.vue'
 import { createDashboardClient, formatCost } from './dashboard-api.mjs'
 import { loadWarehouseDashboard, createAdminTransport } from './warehouse-api.mjs'
 
@@ -14,6 +15,10 @@ const api = createAdminTransport()
 const dashboardApi = createDashboardClient()
 const marking = ref(false)
 const exportScope = ref(null)
+const restricted = ref(false)
+const maintenance = ref(false)
+let stateTimer
+let stateRequest
 const section = ref('overview')
 const dashboard = ref(null)
 const busy = ref(false)
@@ -24,7 +29,7 @@ const hasSession = ref(false)
 const username = ref('')
 const password = ref('')
 let activeRequest
-const navigation = { overview: 'Overview', products: 'Products', masters: 'Master data', counts: 'Stocktakes', costs: 'Product costs', exports: 'Data export', team: 'Employees and devices', profile: 'My account' }
+const navigation = { overview: 'Overview', products: 'Products', masters: 'Master data', counts: 'Stocktakes', costs: 'Product costs', exports: 'Data export', team: 'Employees and devices', backups: 'Backups', profile: 'My account' }
 const statistics = [
   ['productCount', 'Product types'], ['quantity', 'Total stock quantity'],
   ['totalValue', 'Total stock cost (RM)'], ['negativeCount', 'Negative-stock products'],
@@ -38,6 +43,8 @@ const messages = {
 }
 
 async function refresh() {
+  stateRequest?.abort()
+  stateRequest = null
   const request = new AbortController()
   activeRequest?.abort()
   activeRequest = request
@@ -50,6 +57,7 @@ async function refresh() {
       dashboard.value = result
       needsLogin.value = false
       hasSession.value = true
+      await checkState()
     }
   } catch (failure) {
     if (!request.signal.aborted) {
@@ -81,6 +89,8 @@ async function signIn() {
 
 async function signOut() {
   if (busy.value || signingIn.value) return
+  stateRequest?.abort()
+  stateRequest = null
   busy.value = true
   try {
     const session = await api.read('/api/me')
@@ -112,17 +122,34 @@ async function markRead(row) {
   } finally { marking.value = false }
 }
 
-onMounted(refresh)
-onUnmounted(() => { activeRequest?.abort(); password.value = '' })
+async function checkState() {
+  if (!dashboard.value || stateRequest) return
+  const controller = new AbortController()
+  stateRequest = controller
+  try {
+    const flags = await api.read('/api/state',{signal:controller.signal})
+    if (controller.signal.aborted || !dashboard.value) return
+    restricted.value = !!(flags.maintenance || flags.adminBackupRequired)
+    maintenance.value = !!flags.maintenance
+    if (restricted.value) section.value = 'backups'
+  } catch (failure) {
+    if (!controller.signal.aborted && failure.message === 'LOGIN_REQUIRED') {
+      dashboard.value = null; needsLogin.value = true; hasSession.value = false; error.value = messages.LOGIN_REQUIRED
+    }
+  } finally { if (stateRequest === controller) stateRequest = null }
+}
+
+onMounted(() => { refresh(); stateTimer = setInterval(checkState,5000) })
+onUnmounted(() => { activeRequest?.abort(); stateRequest?.abort(); clearInterval(stateTimer); password.value = '' })
 </script>
 
 <template>
-  <div v-if="dashboard" class="warehouse-shell">
+  <div v-if="dashboard" v-loading="busy" class="warehouse-shell">
     <aside class="warehouse-sidebar">
       <div class="warehouse-brand"><b>LEE T<span class="brand-dot"></span></b><span>WAREHOUSE</span></div>
       <p class="nav-caption">WORKSPACE</p>
       <el-menu :default-active="section" @select="key => { section = key; error = ''; exportScope = null }">
-        <el-menu-item v-for="(label, key) in navigation" :key="key" :index="key"><span>{{ label }}</span></el-menu-item>
+        <el-menu-item v-for="(label, key) in navigation" :key="key" :index="key" :disabled="restricted && key !== 'backups'"><span>{{ label }}</span></el-menu-item>
       </el-menu>
       <div class="sidebar-footer">Inventory · Stocktakes · People</div>
     </aside>
@@ -130,6 +157,7 @@ onUnmounted(() => { activeRequest?.abort(); password.value = '' })
       <header class="warehouse-topbar"><span>{{ navigation[section] }}</span><div><span class="role-label">Administrator</span><el-button :disabled="busy" @click="signOut">Sign out</el-button></div></header>
       <main class="warehouse-content">
         <el-alert v-if="error" :title="error" type="error" :closable="false" />
+        <el-alert v-if="restricted" :title="maintenance ? 'Maintenance is active. Warehouse operations are paused.' : 'Backup storage needs attention. Complete a successful backup to resume Administrator operations.'" type="warning" :closable="false" />
         <Team v-if="section === 'team'" />
         <MasterData v-if="section === 'masters'" />
         <Products v-if="section === 'products'" />
@@ -137,6 +165,7 @@ onUnmounted(() => { activeRequest?.abort(); password.value = '' })
         <Costs v-if="section === 'costs'" />
         <Exports v-if="section === 'exports'" :key="exportScope?.id || 'all'" :scope="exportScope" />
         <Profile v-if="section === 'profile'" @signed-out="refresh" />
+        <Backups v-if="section === 'backups'" @changed="checkState" @restored="refresh" />
         <template v-if="section === 'overview'">
           <div class="page-heading"><div><p class="eyebrow">WAREHOUSE OVERVIEW</p><h1>Warehouse overview</h1><p class="page-subtitle">Stock, reminders and recent activity.</p></div><el-button :disabled="busy" @click="refresh">Refresh stock</el-button></div>
           <div class="metrics-grid">
