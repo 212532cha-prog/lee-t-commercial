@@ -22,7 +22,7 @@ const messages = {
   USERNAME_EXISTS: 'This username is already in use.',
   INVALID_USERNAME: 'Enter a valid username of up to 64 characters.',
   INVALID_NAME: 'Enter a full name of up to 128 characters.',
-  INVALID_PASSWORD: 'Use a password of 6 to 128 characters.',
+  'INVALID_PASSWORD': 'Use a password of 6 to 128 characters.',
   PROFILE_VERSION_CONFLICT: 'Another device changed this employee. Close the editor, refresh the list, then reopen the record.',
   EMPLOYEE_ALREADY_PAIRED: 'This employee already has a paired device. Unbind it before pairing a replacement.',
   EMPLOYEE_INACTIVE: 'This employee is inactive.',
