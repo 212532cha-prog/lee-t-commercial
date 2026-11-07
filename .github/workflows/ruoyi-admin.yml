@@ -10,11 +10,13 @@ on:
       - 'scripts/test-ruoyi-count.mjs'
       - 'scripts/test-ruoyi-costs.mjs'
       - 'scripts/test-ruoyi-exports.mjs'
+      - 'scripts/test-ruoyi-profile.mjs'
       - 'src/auth/**'
       - 'src/catalog/**'
       - 'src/stock/**'
       - 'src/count/**'
       - 'src/export/**'
+      - 'src/profile/**'
       - 'scripts/inspect-xlsx.py'
       - 'src/dashboard/**'
       - 'tests/ruoyi-*.test.mjs'
@@ -29,11 +31,13 @@ on:
       - 'scripts/test-ruoyi-count.mjs'
       - 'scripts/test-ruoyi-costs.mjs'
       - 'scripts/test-ruoyi-exports.mjs'
+      - 'scripts/test-ruoyi-profile.mjs'
       - 'src/auth/**'
       - 'src/catalog/**'
       - 'src/stock/**'
       - 'src/count/**'
       - 'src/export/**'
+      - 'src/profile/**'
       - 'scripts/inspect-xlsx.py'
       - 'src/dashboard/**'
       - 'tests/ruoyi-*.test.mjs'
@@ -92,6 +96,8 @@ jobs:
             sudo apt-get install -y poppler-utils
           fi
           node scripts/test-ruoyi-exports.mjs "${{ runner.temp }}/ruoyi-admin"
+      - name: Verify Administrator profile and password session revocation
+        run: node scripts/test-ruoyi-profile.mjs "${{ runner.temp }}/ruoyi-admin"
       - uses: actions/upload-artifact@v4
         with:
           name: LEE-T-RuoYi-management-candidate
