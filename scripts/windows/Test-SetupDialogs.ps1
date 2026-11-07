@@ -7,12 +7,13 @@ try {
  $password=$dialog.FindName('Password')
  $confirmation=$dialog.FindName('ConfirmPassword')
  $continue=$dialog.FindName('Continue')
- $password.Password='short'
- $confirmation.Password='short'
+ $short=[string]::new('x',5)
+ $password.Password=$short
+ $confirmation.Password=$short
  $continue.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
  if($dialog.FindName('ValidationError').Text -ne 'Use at least 6 characters.' -or $dialog.Tag){throw 'Short password was accepted.'}
- $password.Password='valid-test-password'
- $confirmation.Password='different-test-password'
+ $password.Password=[guid]::NewGuid().ToString('N')
+ $confirmation.Password=[guid]::NewGuid().ToString('N')
  $continue.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
  if($dialog.FindName('ValidationError').Text -ne 'The passwords do not match.' -or $dialog.Tag){throw 'Mismatched passwords were accepted.'}
  $confirmation.Password=$password.Password
