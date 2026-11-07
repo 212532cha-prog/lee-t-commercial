@@ -1,0 +1,66 @@
+name: LEE T RuoYi management UI
+
+on:
+  pull_request:
+    paths:
+      - 'integrations/ruoyi-vue3/**'
+      - 'scripts/test-ruoyi-products.mjs'
+      - 'src/auth/**'
+      - 'src/catalog/**'
+      - 'src/dashboard/**'
+      - 'tests/ruoyi-*.test.mjs'
+      - '.github/workflows/ruoyi-admin.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'integrations/ruoyi-vue3/**'
+      - 'scripts/test-ruoyi-products.mjs'
+      - 'src/auth/**'
+      - 'src/catalog/**'
+      - 'src/dashboard/**'
+      - 'tests/ruoyi-*.test.mjs'
+      - '.github/workflows/ruoyi-admin.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  management:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: warehouse_test
+          POSTGRES_PASSWORD: test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d warehouse_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      WAREHOUSE_NATIVE_PG: '1'
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: test-only
+      PGDATABASE: warehouse_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts
+      - name: Build the RuoYi management bundle
+        run: bash integrations/ruoyi-vue3/build.sh "${{ runner.temp }}/ruoyi-admin"
+      - name: Verify built product forms against PostgreSQL
+        run: node scripts/test-ruoyi-products.mjs "${{ runner.temp }}/ruoyi-admin"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LEE-T-RuoYi-management-candidate
+          path: ${{ runner.temp }}/ruoyi-admin
+          if-no-files-found: error
