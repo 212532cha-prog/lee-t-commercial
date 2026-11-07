@@ -8,6 +8,7 @@ on:
       - 'scripts/test-ruoyi-team.mjs'
       - 'scripts/test-ruoyi-inventory.mjs'
       - 'scripts/test-ruoyi-count.mjs'
+      - 'scripts/test-ruoyi-costs.mjs'
       - 'src/auth/**'
       - 'src/catalog/**'
       - 'src/stock/**'
@@ -23,6 +24,7 @@ on:
       - 'scripts/test-ruoyi-team.mjs'
       - 'scripts/test-ruoyi-inventory.mjs'
       - 'scripts/test-ruoyi-count.mjs'
+      - 'scripts/test-ruoyi-costs.mjs'
       - 'src/auth/**'
       - 'src/catalog/**'
       - 'src/stock/**'
@@ -75,6 +77,8 @@ jobs:
         run: node scripts/test-ruoyi-inventory.mjs "${{ runner.temp }}/ruoyi-admin"
       - name: Verify stocktake management and direct sign-in against PostgreSQL
         run: node scripts/test-ruoyi-count.mjs "${{ runner.temp }}/ruoyi-admin"
+      - name: Verify costs and reminder crossing protection against PostgreSQL
+        run: node scripts/test-ruoyi-costs.mjs "${{ runner.temp }}/ruoyi-admin"
       - uses: actions/upload-artifact@v4
         with:
           name: LEE-T-RuoYi-management-candidate
