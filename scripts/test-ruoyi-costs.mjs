@@ -87,6 +87,7 @@ try {
   await page.getByText('This stock reminder changed. Refresh stock to see the latest alert.', { exact: true }).waitFor();
   assert.equal((await new DashboardService(pool, auth).get(actor.token)).negative[0].read, false);
   await page.getByRole('menuitem', { name: 'Product costs', exact: true }).click();
+  assert.equal(await page.getByText('This stock reminder changed. Refresh stock to see the latest alert.', { exact: true }).count(), 0);
   await page.getByRole('button', { name: 'Load more costs', exact: true }).waitFor();
   assert.equal(await page.locator('.cost-table .el-table__row').count(), 100);
   await page.getByRole('button', { name: 'Load more costs', exact: true }).click();

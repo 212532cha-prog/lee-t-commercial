@@ -118,7 +118,7 @@ onUnmounted(() => { activeRequest?.abort(); password.value = '' })
     <aside class="warehouse-sidebar">
       <div class="warehouse-brand"><b>LEE T<span class="brand-dot"></span></b><span>WAREHOUSE</span></div>
       <p class="nav-caption">WORKSPACE</p>
-      <el-menu :default-active="section" @select="key => section = key">
+      <el-menu :default-active="section" @select="key => { section = key; error = '' }">
         <el-menu-item v-for="(label, key) in navigation" :key="key" :index="key"><span>{{ label }}</span></el-menu-item>
       </el-menu>
       <div class="sidebar-footer">Inventory · Stocktakes · People</div>
