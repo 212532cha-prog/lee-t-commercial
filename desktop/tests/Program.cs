@@ -28,12 +28,14 @@ internal static class Smoke
                 Require(!browser.CoreWebView2.Settings.AreHostObjectsAllowed, "Host objects must be disabled.");
                 Require(!browser.CoreWebView2.Settings.IsWebMessageEnabled, "Host messages must be disabled.");
                 Require(!browser.CoreWebView2.Settings.AreDevToolsEnabled, "Developer tools must be disabled.");
-                Require(await browser.ExecuteScriptAsync("fetch('/session', {method:'POST'}).then(r=>r.text())") == "\"signed-in\"", "Session creation failed.");
+                await browser.ExecuteScriptAsync("fetch('/session', {method:'POST'}).then(r=>r.text()).then(value=>document.body.dataset.session=value)");
+                await Until(async () => await browser.ExecuteScriptAsync("document.body.dataset.session") == "\"signed-in\"");
                 var reload = new TaskCompletionSource<bool>();
                 browser.CoreWebView2.NavigationCompleted += (_, result) => reload.TrySetResult(result.IsSuccess);
                 browser.Reload();
                 Require(await reload.Task.WaitAsync(TimeSpan.FromSeconds(15)), "Warehouse reload failed.");
-                Require(await browser.ExecuteScriptAsync("fetch('/session').then(r=>r.text())") == "\"signed-in\"", "Reload lost the signed-in session.");
+                await browser.ExecuteScriptAsync("fetch('/session').then(r=>r.text()).then(value=>document.body.dataset.session=value)");
+                await Until(async () => await browser.ExecuteScriptAsync("document.body.dataset.session") == "\"signed-in\"");
                 var navigation = new TaskCompletionSource<bool>();
                 browser.CoreWebView2.NavigationStarting += (_, args) =>
                 {
