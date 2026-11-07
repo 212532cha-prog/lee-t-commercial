@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
+import { locationPath } from './location-path.mjs'
 import { createProductClient } from './product-api.mjs'
 
 const api = createProductClient()
@@ -150,7 +151,7 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
         <el-option v-for="row in masters.categories" :key="row.id" :label="row.name" :value="row.id" />
       </el-select>
       <el-select v-model="locationId" aria-label="Location filter" placeholder="All locations" clearable :disabled="busy || saving" @change="load(false)">
-        <el-option v-for="row in masters.locations" :key="row.id" :label="row.name" :value="row.id" />
+        <el-option v-for="row in masters.locations" :key="row.id" :label="locationPath(row.id, masters.locations)" :value="row.id" />
       </el-select>
       <el-button :disabled="busy || saving" @click="initialize">Refresh</el-button>
       <el-button type="primary" :disabled="busy || saving" @click="edit(null)">Add product</el-button>
@@ -159,7 +160,7 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
       <el-table-column prop="productCode" label="Product code" min-width="140" />
       <el-table-column prop="name" label="Product" min-width="200" />
       <el-table-column prop="categoryName" label="Category" min-width="140" />
-      <el-table-column prop="locationName" label="Location" min-width="140" />
+      <el-table-column label="Location" min-width="140"><template #default="{ row }">{{ locationPath(row.locationId, masters.locations) || row.locationName }}</template></el-table-column>
       <el-table-column prop="quantity" label="Current stock" min-width="120" />
       <el-table-column label="Actions" width="110"><template #default="{ row }">
         <el-button :disabled="busy || saving" @click="open(row.id)">Details</el-button>
@@ -174,7 +175,7 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
           <el-descriptions-item label="Current stock">{{ detail.quantity }}</el-descriptions-item>
           <el-descriptions-item label="Minimum stock">{{ detail.minimumStock }}</el-descriptions-item>
           <el-descriptions-item label="Category">{{ detail.categoryName }}</el-descriptions-item>
-          <el-descriptions-item label="Location">{{ detail.locationName }}</el-descriptions-item>
+          <el-descriptions-item label="Location">{{ locationPath(detail.locationId, masters.locations) || detail.locationName }}</el-descriptions-item>
           <el-descriptions-item label="Individual cost (RM)">{{ detail.individualCost }}</el-descriptions-item>
           <el-descriptions-item label="Suppliers">{{ detail.suppliers.map(row => row.name).join(', ') }}</el-descriptions-item>
         </el-descriptions>
@@ -190,7 +191,7 @@ onUnmounted(() => { disposed = true; activeRequest?.abort() })
           <el-option v-for="row in masters.categories.filter(row => !row.deleted)" :key="row.id" :value="row.id" :label="row.name" />
         </el-select></el-form-item>
         <el-form-item label="Location"><el-select v-model="draft.locationId" :disabled="saving">
-          <el-option v-for="row in masters.locations.filter(row => !row.deleted)" :key="row.id" :value="row.id" :label="row.name" />
+          <el-option v-for="row in masters.locations.filter(row => !row.deleted)" :key="row.id" :value="row.id" :label="locationPath(row.id, masters.locations)" />
         </el-select></el-form-item>
         <el-form-item label="Individual cost (RM)"><el-input v-model="draft.individualCost" :disabled="saving" /></el-form-item>
         <el-form-item label="Minimum stock"><el-input-number v-model="draft.minimumStock" :min="0" :precision="0" :disabled="saving" /></el-form-item>
