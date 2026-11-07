@@ -37,6 +37,7 @@ jobs:
           $desktop = Join-Path $env:RUNNER_TEMP 'leet-desktop'
           dotnet publish desktop/windows/LeeT.Desktop.csproj -c Release -r win-x64 --self-contained true -o $desktop
           if ($LASTEXITCODE -ne 0) { throw 'Desktop client build failed.' }
+          $ProgressPreference = 'SilentlyContinue'
           $webView = Join-Path $env:RUNNER_TEMP 'WebView2RuntimeInstaller.exe'
           Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/?linkid=2124701' -OutFile $webView -UseBasicParsing
       - name: Stage bundled Windows dependencies
@@ -58,6 +59,9 @@ jobs:
             $probe = Start-Process -FilePath $desktop -ArgumentList '--check-runtime' -Wait -PassThru
           }
           if ($probe.ExitCode -ne 0) { throw 'Staged desktop cannot locate WebView2.' }
+      - name: Verify graphical setup prompts
+        shell: powershell
+        run: ./scripts/windows/Test-SetupDialogs.ps1
       - name: Verify the desktop window and session
         shell: powershell
         run: |

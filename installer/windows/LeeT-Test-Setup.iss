@@ -132,7 +132,7 @@ begin
     ' -DataRoot ' + AddQuotes(RemoveBackslashUnlessRoot(DataPage.Values[0])) +
     ' -LicenseDirectory ' + AddQuotes(RemoveBackslashUnlessRoot(LicensePage.Values[0])) +
     ' -IssuerPublicKey ' + AddQuotes(KeyPage.Values[0]) +
-    ' -IssuerKeyId ' + AddQuotes(Trim(OptionsPage.Values[0])) + ' -ConfirmNetworkTrust';
+    ' -IssuerKeyId ' + AddQuotes(Trim(OptionsPage.Values[0])) + ' -ConfirmNetworkTrust -GuiSetup';
   if not Exec(PowerShell, Arguments, ExpandConstant('{app}'), SW_SHOWNORMAL,
       ewWaitUntilTerminated, ProvisionResult) then
     ProvisionResult := 1;

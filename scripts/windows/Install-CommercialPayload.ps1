@@ -9,7 +9,8 @@ param(
  [string]$Address,
  [string]$HttpsHostname,
  [string]$HttpsPfxPath,
- [switch]$ConfirmNetworkTrust
+ [switch]$ConfirmNetworkTrust,
+ [switch]$GuiSetup
 )
 $ErrorActionPreference='Stop'
 $payload=(Resolve-Path -LiteralPath $PayloadDirectory).Path
@@ -43,7 +44,13 @@ if(-not $Address){
  $Address=$selected.IPAddress
  $profile=$profiles | Where-Object InterfaceIndex -eq $selected.InterfaceIndex | Select-Object -First 1
  if($profile.NetworkCategory -eq 'Public'){
-  $answer=Read-Host ("Allow warehouse devices on the trusted network '"+$profile.Name+"' to connect? Windows will mark this network Private. [y/N]")
+  if($GuiSetup){
+   Add-Type -AssemblyName PresentationFramework
+   $choice=[Windows.MessageBox]::Show(("Allow warehouse devices on '"+$profile.Name+"' to connect? Windows will mark this trusted network Private."),'LEE T Warehouse setup','YesNo','Question')
+   $answer=if($choice -eq 'Yes'){'yes'}else{'no'}
+  }else{
+   $answer=Read-Host ("Allow warehouse devices on the trusted network '"+$profile.Name+"' to connect? Windows will mark this network Private. [y/N]")
+  }
   if($answer -notin @('y','yes')){throw 'Setup stopped before changing the network profile.'}
   Set-NetConnectionProfile -InputObject $profile -NetworkCategory Private
   $confirmedProfile=$profile
@@ -52,7 +59,7 @@ if(-not $Address){
 try{
 & $installer -Commercial -OfflineDependencies -AppRoot $app -BundledNodePath $node `
  -BundledPostgresDirectory $postgres -DatabaseClusterRoot (Join-Path $root 'postgresql') `
- -DataDir (Join-Path $root 'data') -Address $Address -HttpsHostname $HttpsHostname -HttpsPfxPath $HttpsPfxPath `
+ -DataDir (Join-Path $root 'data') -GuiSetup:$GuiSetup -Address $Address -HttpsHostname $HttpsHostname -HttpsPfxPath $HttpsPfxPath `
  -LicenseDir (Resolve-Path -LiteralPath $LicenseDirectory).Path `
  -IssuerPublicKeyPath (Resolve-Path -LiteralPath $IssuerPublicKey).Path -IssuerKeyId $IssuerKeyId
 }catch{
