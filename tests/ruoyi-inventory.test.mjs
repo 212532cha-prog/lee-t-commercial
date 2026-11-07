@@ -81,6 +81,9 @@ test('RuoYi history and quantity clients preserve manual anchors and reject stal
   const old = (await api.history(oldProduct.id)).events[0];
   await assert.rejects(api.correct(oldProduct.id, old.id, { quantity: '8', expectedRevision: old.revision }), error => error.code === 'HISTORY_IMMUTABLE');
   assert.equal((await api.detail(oldProduct.id)).quantity, 4);
+  await pool.query("UPDATE inventory_events SET created_at=$2 WHERE product_id=$1", [oldProduct.id, '2026-01-01T00:30:00+08:00']);
+  assert.equal((await api.history(oldProduct.id, { from: '2026-01-01T00:00:00+08:00', to: '2026-01-01T23:59:59.999+08:00' })).events.length, 1);
+  assert.equal((await api.history(oldProduct.id, { from: '2025-12-31T00:00:00+08:00', to: '2025-12-31T23:59:59.999+08:00' })).events.length, 0);
   const paged = await seed.create({ ...input, name: 'Paged history bolt' });
   for (let index = 0; index < 32; index++) await stock.commit(admin.token, admin.csrf, { requestId: randomUUID(), kind: 'inbound', items: [{ productId: paged.id, quantity: 1 }] });
   const pageOne = await api.history(paged.id, { order: 'oldest' });
