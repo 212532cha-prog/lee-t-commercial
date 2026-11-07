@@ -35,6 +35,14 @@ export function createProductClient({ request = globalThis.fetch } = {}) {
     save(id, data) {
       return write('/api/products' + (id ? '/' + encodeURIComponent(id) : ''), { method: id ? 'PATCH' : 'POST', data });
     },
+    saveMaster(kind, id, data) {
+      if (!['categories', 'suppliers', 'locations'].includes(kind)) throw Error('INVALID_MASTER_KIND');
+      return write('/api/' + kind + (id ? '/' + encodeURIComponent(id) : ''), { method: id ? 'PATCH' : 'POST', data });
+    },
+    removeMaster(kind, id) {
+      if (!['categories', 'suppliers', 'locations'].includes(kind)) throw Error('INVALID_MASTER_KIND');
+      return write('/api/' + kind + '/' + encodeURIComponent(id), { method: 'DELETE' });
+    },
     remove(id) {
       return write('/api/products/' + encodeURIComponent(id), { method: 'DELETE', headers: { 'X-Confirm-Permanent': 'delete-product' } });
     },

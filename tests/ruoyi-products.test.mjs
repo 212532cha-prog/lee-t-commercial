@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { StockService } from '../src/stock/service.mjs';
 import { PhotoStore } from '../src/catalog/files.mjs';
 import { once } from 'node:events';
 import { testPool } from './helpers/database.mjs';
@@ -12,9 +13,10 @@ import { AuthService } from '../src/auth/service.mjs';
 import { createAuthServer } from '../src/auth/http.mjs';
 import { CatalogService, UNASSIGNED } from '../src/catalog/service.mjs';
 import { createCatalogRoutes } from '../src/catalog/routes.mjs';
+import { locationPath } from '../integrations/ruoyi-vue3/src/views/leet/location-path.mjs';
 import { createProductClient } from '../integrations/ruoyi-vue3/src/views/leet/product-api.mjs';
 
-test('RuoYi product client preserves stock, rejects stale metadata and enforces employee permissions through actual routes', async t => {
+test('RuoYi product and master clients preserve stock, reject stale metadata and enforce permissions through actual routes', async t => {
   const { pool } = await testPool();
   t.after(() => pool.end());
   await migrate(pool);
@@ -59,6 +61,42 @@ test('RuoYi product client preserves stock, rejects stale metadata and enforces 
   await assert.rejects(staff.save(product.id, input), /ADMIN_REQUIRED/);
   await assert.rejects(staff.remove(product.id), /ADMIN_REQUIRED/);
   await assert.rejects(client(null).list(), /LOGIN_REQUIRED/);
+  const parent = await api.saveMaster('locations', null, { name: 'Rack A', parentId: null });
+  const child = await api.saveMaster('locations', null, { name: 'Shelf A1', parentId: parent.id });
+  const supplier = await api.saveMaster('suppliers', null, { name: 'Supply A' });
+  const linked = await api.save(null, { ...input, name: 'Linked bolt', locationId: child.id, supplierIds: [supplier.id], defaultSupplierId: supplier.id });
+  await new StockService(pool, auth).commit(admin.token, admin.csrf, {
+    requestId: randomUUID(), kind: 'inbound', items: [{ productId: linked.id, quantity: 7 }],
+  });
+  const beforeMasterDeletion = await api.detail(linked.id);
+  const current = await api.masters();
+  const categoryBefore = current.categories.find(row => row.id === category.id);
+  await api.saveMaster('categories', category.id, { name: 'Changed category', revision: categoryBefore.revision });
+  await assert.rejects(api.saveMaster('categories', category.id, { name: 'Stale category', revision: categoryBefore.revision }), error => error.code === 'MASTER_VERSION_CONFLICT');
+  assert.equal(locationPath(child.id, current.locations), 'Rack A / Shelf A1');
+  const parentBefore = current.locations.find(row => row.id === parent.id);
+  await assert.rejects(api.saveMaster('locations', parent.id, { name: 'Rack A', parentId: child.id, revision: parentBefore.revision }), error => error.code === 'LOCATION_CYCLE');
+  await assert.rejects(api.removeMaster('locations', UNASSIGNED), error => error.code === 'BUILTIN_LOCATION');
+  await assert.rejects(staff.saveMaster('categories', null, { name: 'Forbidden' }), /ADMIN_REQUIRED/);
+  await assert.rejects(staff.removeMaster('suppliers', supplier.id), /ADMIN_REQUIRED/);
+  await api.removeMaster('suppliers', supplier.id);
+  await api.removeMaster('locations', parent.id);
+  await api.removeMaster('categories', category.id);
+  const preserved = await api.detail(linked.id);
+  assert.equal(preserved.categoryId, null);
+  assert.equal(preserved.categoryName, 'Changed category');
+  assert.equal(preserved.categoryDeleted, true);
+  assert.equal(preserved.suppliers[0].name, 'Supply A');
+  assert.equal(preserved.suppliers[0].deleted, true);
+  assert.equal(preserved.locationId, UNASSIGNED);
+  assert.equal(preserved.quantity, 7);
+  assert.equal(preserved.individualCost, beforeMasterDeletion.individualCost);
+  assert.equal(preserved.inventoryVersion, beforeMasterDeletion.inventoryVersion);
+  await api.save(linked.id, { ...input, name: 'Preserved deleted category', categoryId: null, locationId: UNASSIGNED, detailsVersion: preserved.detailsVersion });
+  const editedDeleted = await api.detail(linked.id);
+  assert.equal(editedDeleted.categoryDeleted, true);
+  assert.equal(editedDeleted.categoryName, 'Changed category');
+  assert.equal(editedDeleted.quantity, 7);
   await api.remove(product.id);
   await assert.rejects(api.detail(product.id), error => error.code === 'PRODUCT_NOT_FOUND');
 });

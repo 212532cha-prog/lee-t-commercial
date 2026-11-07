@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
+import MasterData from './MasterData.vue'
 import Products from './Products.vue'
 import { loadWarehouseDashboard } from './warehouse-api.mjs'
 
@@ -51,7 +52,9 @@ onUnmounted(() => activeRequest?.abort())
     <el-menu v-if="dashboard" mode="horizontal" :default-active="section" @select="key => section = key">
       <el-menu-item index="overview">Overview</el-menu-item>
       <el-menu-item index="products">Products</el-menu-item>
+      <el-menu-item index="masters">Master data</el-menu-item>
     </el-menu>
+    <MasterData v-if="dashboard && section === 'masters'" />
     <Products v-if="dashboard && section === 'products'" />
     <template v-if="dashboard && section === 'overview'">
       <el-row :gutter="16">

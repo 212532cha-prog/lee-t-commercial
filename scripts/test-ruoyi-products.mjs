@@ -87,6 +87,50 @@ try {
   await page.getByText('Product deleted.', { exact: true }).waitFor();
   assert.equal((await pool.query('SELECT id FROM products WHERE id=$1', [id])).rows.length, 0);
   await page.waitForFunction(() => [...globalThis.document.querySelectorAll('.el-overlay')].every(element => element.getClientRects().length === 0));
+  await page.getByRole('menuitem', { name: 'Master data', exact: true }).click();
+  await page.getByRole('button', { name: 'Add record', exact: true }).click();
+  const masterEditor = page.getByRole('dialog', { name: 'Add master data', exact: true });
+  await masterEditor.getByRole('textbox').first().fill('Browser category');
+  await masterEditor.getByRole('button', { name: 'Save record', exact: true }).click();
+  const masterRow = page.locator('.el-table__row').filter({ hasText: 'Browser category' });
+  await masterRow.getByRole('button', { name: 'Edit record', exact: true }).click();
+  const editMaster = page.getByRole('dialog', { name: 'Edit master data', exact: true });
+  const master = (await catalog.masters()).categories.find(row => row.name === 'Browser category');
+  const linkedMasterProduct = await seed.create({ ...input, name: 'Product with removed category', categoryId: master.id });
+  await seed.editMaster('categories', master.id, { name: 'Category changed elsewhere', revision: master.revision });
+  await editMaster.getByRole('textbox').first().fill('Stale master change');
+  await editMaster.getByRole('button', { name: 'Save record', exact: true }).click();
+  await editMaster.getByText('Another device changed this record.', { exact: false }).waitFor();
+  assert.equal((await catalog.masters()).categories.find(row => row.id === master.id).name, 'Category changed elsewhere');
+  await editMaster.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Refresh master data', exact: true }).click();
+  await page.locator('.el-table__row').filter({ hasText: 'Category changed elsewhere' }).getByRole('button', { name: 'Delete record', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Delete master data', exact: true }).getByRole('button', { name: 'OK', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Final confirmation', exact: true }).getByRole('button', { name: 'OK', exact: true }).click();
+  await page.getByText('Master data deleted.', { exact: true }).waitFor();
+  assert.equal((await catalog.masters()).categories.some(row => row.id === master.id), false);
+  await page.getByText('Locations', { exact: true }).click();
+  const builtIn = page.locator('.el-table__row').filter({ hasText: 'Built-in location' });
+  await builtIn.waitFor();
+  assert.equal(await builtIn.getByRole('button').count(), 0);
+  await page.getByRole('menuitem', { name: 'Products', exact: true }).click();
+  await page.locator('.el-table__row').filter({ hasText: 'Product with removed category' }).getByRole('button', { name: 'Details', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Product details', exact: true }).getByRole('button', { name: 'Edit product', exact: true }).click();
+  const retainedEditor = page.getByRole('dialog', { name: 'Edit product', exact: true });
+  await retainedEditor.getByText('Previous category Category changed elsewhere (deleted) will be retained.', { exact: true }).waitFor();
+  await retainedEditor.getByRole('textbox').first().fill('Retained deleted category');
+  await retainedEditor.getByRole('button', { name: 'Save product', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Product details', exact: true }).getByRole('heading', { name: 'Retained deleted category', exact: true }).waitFor();
+  const retainedProduct = await catalog.detail(linkedMasterProduct.id);
+  assert.equal(retainedProduct.categoryDeleted, true);
+  assert.equal(retainedProduct.categoryName, 'Category changed elsewhere');
+  assert.equal(retainedProduct.quantity, 0);
+  const retainedDetails = page.getByRole('dialog', { name: 'Product details', exact: true });
+  await retainedDetails.locator('button:not([disabled])').filter({ hasText: 'Edit product' }).waitFor();
+  await retainedDetails.locator('.el-dialog__headerbtn').click();
+
+  await page.waitForFunction(() => [...globalThis.document.querySelectorAll('.el-overlay')].every(element => element.getClientRects().length === 0));
+
   await page.screenshot({ path: process.argv[3] || join(directory, 'products.png'), fullPage: true });
   assert.deepEqual(errors, []);
   await page.context().close();
@@ -99,7 +143,8 @@ try {
   await staff.goto(base + '/admin/');
   await staff.getByText('An Administrator account is required.', { exact: true }).waitFor();
   assert.equal(await staff.getByRole('menuitem', { name: 'Products', exact: true }).count(), 0);
-  console.log('Built RuoYi browser: create, stale edit rejection, permanent deletion, stock preservation and employee denial passed.');
+  assert.equal(await staff.getByRole('menuitem', { name: 'Master data', exact: true }).count(), 0);
+  console.log('Built RuoYi browser: product/master creation, stale edit rejection, deletion, built-in location protection, stock preservation and employee denial passed.');
 } finally {
   if (browser) { await browser.browser.close(); await browser.cleanup(); }
   for (const instance of [proxy, server]) if (instance) { instance.closeAllConnections(); await new Promise(resolve => instance.close(resolve)); }
