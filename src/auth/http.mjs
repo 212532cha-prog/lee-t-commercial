@@ -3,6 +3,7 @@ import {createServer as createHttpsServer} from 'node:https';
 import {readFileSync} from 'node:fs';
 import QRCode from 'qrcode';
 import { identityPath } from '../commercial/discovery.mjs';
+import { createRuoyiStatic } from '../dashboard/ruoyi-static.mjs';
 import {AuthError} from './service.mjs';
 const assets=new Map([['/',['index.html','text/html; charset=utf-8']],['/app.js',['app.js','text/javascript; charset=utf-8']],['/app.css',['app.css','text/css; charset=utf-8']],['/pairing.js',['pairing.js','text/javascript; charset=utf-8']],['/native-transport.js',['native-transport.js','text/javascript; charset=utf-8']],['/catalog.js',['catalog.js','text/javascript; charset=utf-8']],['/qr-print.js',['qr-print.js','text/javascript; charset=utf-8']],['/stock.js',['stock.js','text/javascript; charset=utf-8']],['/backup.js',['backup.js','text/javascript; charset=utf-8']],['/count.js',['count.js','text/javascript; charset=utf-8']],['/admin.js',['admin.js','text/javascript; charset=utf-8']]]);
 const uuid=/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
@@ -11,7 +12,7 @@ const clearCookie=()=> '__Host-warehouse_session=; Path=/; Secure; HttpOnly; Sam
 const deviceCookie=raw=>`__Host-leet_device=${raw}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=34560000`;
 function cookieToken(req,name){const prefix=name+'=';const matches=(req.headers.cookie||'').split(';').map(s=>s.trim()).filter(s=>s.startsWith(prefix));return matches.length===1?matches[0].slice(prefix.length):'';}
 async function body(req,limit=16384){if(Number(req.headers['content-length'])>limit)throw new AuthError('BODY_TOO_LARGE',413);if(req.headers['content-type']?.split(';')[0]!=='application/json')throw new AuthError('JSON_REQUIRED',415);let length=0,chunks=[];for await(const chunk of req){length+=chunk.length;if(length>limit)throw new AuthError('BODY_TOO_LARGE',413);chunks.push(chunk);}try{const value=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(!value||typeof value!=='object'||Array.isArray(value))throw Error('object required');return value;}catch{throw new AuthError('INVALID_JSON');}}
-export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=>Date.now(),catalogRoutes,stockRoutes,backupRoutes,countRoutes,applicationRoutes,tls,localAdmin=false}){
+export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=>Date.now(),catalogRoutes,stockRoutes,backupRoutes,countRoutes,applicationRoutes,tls,localAdmin=false,ruoyiAdminDirectory}){
  if(localAdmin&&!tls)throw Error('Local administrator origin requires HTTPS');
  const localPort=Number(new URL(publicOrigin).port||443);
  const localAuthority='localhost'+(localPort===443?'':':'+localPort);
@@ -19,6 +20,7 @@ export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=
  for(const origin of origins){
   if(new URL(origin).protocol!=='https:'||new URL(origin).origin!==origin)throw Error('Allowed origins must use HTTPS');
  }
+ const ruoyiAdmin=ruoyiAdminDirectory?createRuoyiStatic(ruoyiAdminDirectory):null;
  const attempts=new Map();
  const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
  const responses=new Set();const server=(tls?handler=>createHttpsServer(tls,handler):createServer)(async(req,res)=>{
@@ -30,6 +32,7 @@ export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=
    const localWrite=localAdmin&&['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)&&
     req.headers.host===localAuthority&&req.headers.origin==='https://'+localAuthority;
    if(write&&!origins.has(req.headers.origin)&&!localWrite)throw new AuthError('ORIGIN_REJECTED',403);
+   if(ruoyiAdmin&&await ruoyiAdmin(req,res,url))return;
    if(req.method==='GET'&&url==='/fonts/business-regular.woff2'){res.writeHead(200,{'Content-Type':'font/woff2','Cache-Control':'public, max-age=86400'});res.end(readFileSync(new URL('../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2',import.meta.url)));return;}
    if(req.method==='GET'&&url==='/vendor/jsqr.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(readFileSync(new URL('../../node_modules/jsqr/dist/jsQR.js',import.meta.url)));return;}
    if(req.method==='GET'&&assets.has(url)){const [name,type]=assets.get(url);res.writeHead(200,{'Content-Type':type});res.end(readFileSync(new URL('../../public/app/'+name,import.meta.url)));return;}
