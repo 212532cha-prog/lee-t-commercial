@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
     paths:
+      - 'desktop/windows/**'
+      - 'installer/windows/**'
+      - 'scripts/windows/**'
+      - '.github/workflows/windows-commercial-test-setup.yml'
+  pull_request:
+    paths:
+      - 'desktop/windows/**'
       - 'installer/windows/**'
       - 'scripts/windows/**'
       - '.github/workflows/windows-commercial-test-setup.yml'
@@ -21,12 +28,36 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Publish self-contained desktop client
+        shell: powershell
+        run: |
+          $desktop = Join-Path $env:RUNNER_TEMP 'leet-desktop'
+          dotnet publish desktop/windows/LeeT.Desktop.csproj -c Release -r win-x64 --self-contained true -o $desktop
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop client build failed.' }
+          $webView = Join-Path $env:RUNNER_TEMP 'WebView2RuntimeInstaller.exe'
+          Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/?linkid=2124701' -OutFile $webView -UseBasicParsing
       - name: Stage bundled Windows dependencies
         shell: powershell
         run: |
           $nodeDirectory = Split-Path (Get-Command node.exe).Source
           $postgresDirectory = Join-Path $env:ProgramFiles 'PostgreSQL\17'
-          ./scripts/windows/Stage-CommercialPayload.ps1 -NodeDirectory $nodeDirectory -PostgresDirectory $postgresDirectory -OutputDirectory (Join-Path $env:RUNNER_TEMP 'leet-payload')
+          ./scripts/windows/Stage-CommercialPayload.ps1 -NodeDirectory $nodeDirectory -PostgresDirectory $postgresDirectory -DesktopDirectory (Join-Path $env:RUNNER_TEMP 'leet-desktop') -WebView2Installer (Join-Path $env:RUNNER_TEMP 'WebView2RuntimeInstaller.exe') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'leet-payload')
+      - name: Verify staged desktop runtime
+        shell: powershell
+        run: |
+          $payload = Join-Path $env:RUNNER_TEMP 'leet-payload'
+          $desktop = Join-Path $payload 'desktop\LeeT.Warehouse.exe'
+          $runtime = Join-Path $payload 'runtime\WebView2RuntimeInstaller.exe'
+          $probe = Start-Process -FilePath $desktop -ArgumentList '--check-runtime' -Wait -PassThru
+          if ($probe.ExitCode -ne 0) {
+            $setup = Start-Process -FilePath $runtime -ArgumentList '/silent /install' -Wait -PassThru
+            if ($setup.ExitCode -notin @(0, 3010)) { throw 'WebView2 setup failed.' }
+            $probe = Start-Process -FilePath $desktop -ArgumentList '--check-runtime' -Wait -PassThru
+          }
+          if ($probe.ExitCode -ne 0) { throw 'Staged desktop cannot locate WebView2.' }
       - name: Build Windows test setup
         shell: powershell
         run: |

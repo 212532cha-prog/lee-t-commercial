@@ -46,3 +46,7 @@ WarehouseService.exe
 
 # Generated Capacitor native project
 /mobile/android/
+
+# Windows desktop build outputs
+/desktop/windows/bin/
+/desktop/windows/obj/
