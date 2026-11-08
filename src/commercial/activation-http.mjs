@@ -1,8 +1,7 @@
 import { createServer } from 'node:https';
-import { redeemActivationCode } from './activation-ledger.mjs';
+import {redeemActivationInput,validateActivationIssuer} from './activation-fetch.mjs';
 
-import { activationPath } from './activation-client.mjs';
-const maxBodyBytes = 4096;
+import {activationPath,activationBodyLimit as maxBodyBytes} from './activation-protocol.mjs';
 
 function reply(response, status, body) {
   response.writeHead(status, {
@@ -17,6 +16,7 @@ export function createActivationServer({ tls, pool, issuer, onError = () => {} }
   if (!tls?.key || !tls.cert || !pool || !issuer?.privateKeyPem || !issuer.keyId) {
     throw Error('HTTPS, issuer and activation database configuration are required.');
   }
+  validateActivationIssuer(issuer);
   return createServer({ key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2', requestTimeout: 10000 }, async (request, response) => {
     if (request.url !== activationPath) return reply(response, 404, { error: 'NOT_FOUND' });
     if (request.method !== 'POST') {
@@ -43,13 +43,7 @@ export function createActivationServer({ tls, pool, issuer, onError = () => {} }
     } catch {
       return reply(response, 400, { error: 'INVALID_REQUEST' });
     }
-    try {
-      const license = await redeemActivationCode(pool, input, issuer);
-      return reply(response, 200, { license });
-    } catch (error) {
-      if (error.code === 'INVALID_ACTIVATION_CODE') return reply(response, 403, { error: error.code });
-      onError();
-      return reply(response, 503, { error: 'ACTIVATION_UNAVAILABLE' });
-    }
+    const result=await redeemActivationInput(pool,input,issuer,onError);
+    return reply(response,result.status,result.body);
   });
 }

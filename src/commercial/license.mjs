@@ -3,6 +3,7 @@
  * These primitives do not redeem one-time activation codes: that requires a separate
  * transactional License Center service, which must never ship with the customer installer.
  */
+import {Buffer} from 'node:buffer';
 import { createHash, createPublicKey, createPrivateKey, generateKeyPairSync, randomUUID, sign, verify } from 'node:crypto';
 
 const PRODUCT = 'lee-t-warehouse';

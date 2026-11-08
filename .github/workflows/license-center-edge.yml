@@ -1,0 +1,85 @@
+name: LEE T License Center Edge
+on:
+  pull_request:
+    paths:
+      - 'integrations/license-center/**'
+      - 'src/commercial/**'
+      - 'src/db/database.mjs'
+      - 'scripts/test-edge-activation.mjs'
+      - 'scripts/build-license-edge.mjs'
+      - 'package-lock.json'
+      - '.github/workflows/license-center-edge.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'integrations/license-center/**'
+      - 'src/commercial/**'
+      - 'src/db/database.mjs'
+      - 'scripts/test-edge-activation.mjs'
+      - 'scripts/build-license-edge.mjs'
+      - 'package-lock.json'
+      - '.github/workflows/license-center-edge.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  edge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: warehouse_test
+          POSTGRES_PASSWORD: test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d warehouse_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: test-only
+      PGDATABASE: warehouse_test
+      WAREHOUSE_NATIVE_PG: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: '2.9.6'
+      - name: Check the npm-lock-backed Deno dependency graph
+        run: deno check --config integrations/license-center/deno.json integrations/license-center/serve.mjs
+      - name: Build standalone deployment bundle from locked npm dependencies
+        run: node scripts/build-license-edge.mjs "$RUNNER_TEMP/license-edge"
+      - name: Enable trusted test database TLS
+        env:
+          DATABASE_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout "$RUNNER_TEMP/edge-db-key.pem" -out "$RUNNER_TEMP/edge-db-cert.pem" -days 1 -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+          docker cp "$RUNNER_TEMP/edge-db-key.pem" "$DATABASE_CONTAINER:/tmp/edge-db-key.pem"
+          docker cp "$RUNNER_TEMP/edge-db-cert.pem" "$DATABASE_CONTAINER:/tmp/edge-db-cert.pem"
+          docker exec -u root "$DATABASE_CONTAINER" chown postgres:postgres /tmp/edge-db-key.pem /tmp/edge-db-cert.pem
+          docker exec -u root "$DATABASE_CONTAINER" chmod 600 /tmp/edge-db-key.pem
+          docker exec -u postgres "$DATABASE_CONTAINER" psql -U postgres -d warehouse_test -c "ALTER SYSTEM SET ssl_cert_file='/tmp/edge-db-cert.pem'"
+          docker exec -u postgres "$DATABASE_CONTAINER" psql -U postgres -d warehouse_test -c "ALTER SYSTEM SET ssl_key_file='/tmp/edge-db-key.pem'"
+          docker exec -u postgres "$DATABASE_CONTAINER" psql -U postgres -d warehouse_test -c "ALTER SYSTEM SET ssl=on"
+          docker exec -u postgres "$DATABASE_CONTAINER" psql -U postgres -d warehouse_test -c 'SELECT pg_reload_conf()'
+          task_tls_ready=no
+          for attempt in $(seq 1 20); do
+            if [ "$(docker exec -u postgres "$DATABASE_CONTAINER" psql -U postgres -d warehouse_test -At -c 'SHOW ssl')" = on ]; then task_tls_ready=yes; break; fi
+            sleep 0.25
+          done
+          test "$task_tls_ready" = yes
+          echo "LEE_T_EDGE_TEST_CA=$RUNNER_TEMP/edge-db-cert.pem" >> "$GITHUB_ENV"
+      - name: Exercise real Deno HTTP and PostgreSQL with verified TLS
+        run: LEE_T_EDGE_TEST_BUNDLE="${{ runner.temp }}/license-edge/lee-t-activation.mjs" deno run --allow-env --allow-read --allow-net --allow-run --config integrations/license-center/deno.json scripts/test-edge-activation.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LEE-T-activation-edge-candidate
+          path: ${{ runner.temp }}/license-edge
+          if-no-files-found: error
