@@ -139,8 +139,8 @@ try {
   assert.equal(await history.getByRole('checkbox').count(),2);
   const nextActor=await auth.login('CTL LEE',password);assert.equal((await stock.history(nextActor.token,product.id)).events.length,2);
   assert.equal((await catalog.detail(product.id)).quantity,before.quantity);
-  await page.waitForFunction(()=>[...globalThis.document.querySelectorAll('.el-message-box__wrapper')].every(element=>element.getClientRects().length===0));
-  await history.screenshot({path:process.argv[3]||join(directory,'cleanup.png')});
+  await page.locator('.el-message-box').waitFor({state:'hidden'});
+  await history.screenshot({path:process.argv[3]||join(directory,'cleanup.png'),animations:'disabled'});
   assert.deepEqual(errors,[]);
   console.log('Built RuoYi cleanup: 168h protection, both cancellations, failed-backup rollback, lost-response recovery, unchanged balance/version and actual restore discard gates passed.');
 } finally {
