@@ -13,6 +13,15 @@ export function createCleanupController({api,storage,confirm,changed=()=>{},upda
     if(code==='WAREHOUSE_RESTORED')state.obsolete=true;
     state.error=messages[code]||'The result could not be confirmed. Keep this request and verify its result before doing another cleanup.';
   }
+  async function failed(error){
+    report(error);
+    // These responses are issued only after the ledger lookup and a proven rollback.
+    // Authentication, transport and idempotency conflicts can never release an unknown request.
+    if(['HISTORY_PROTECTED_OR_MISSING','PRODUCT_NOT_FOUND','CLEANUP_CHANGED'].includes(error.code)){
+      try{persist(null);await updated({rejected:true});}
+      catch{state.error+=' Refresh stock history after checking local storage.';}
+    }
+  }
   async function finish(result){
     // Remember a confirmed result in memory even if clearing durable storage fails.
     state.notice=result.deleted ? result.deleted+' records deleted after a verified backup. Stock quantity is unchanged.'+(result.hasMore?' More eligible records remain; review and confirm another batch.':'') : 'No eligible records. Nothing was changed.';
@@ -44,7 +53,7 @@ export function createCleanupController({api,storage,confirm,changed=()=>{},upda
         if(disposed)return;
         persist({productId,requestId:uuid(),...data,restoreMarker});notify();
         await finish(await api.clean(productId,state.pending));
-      }catch(error){if(error!=='cancel'&&error!=='close')report(error);}finally{state.busy=false;notify();}
+      }catch(error){if(error!=='cancel'&&error!=='close')await failed(error);}finally{state.busy=false;notify();}
     },
     async verify(){
       if(!state.ready||state.busy||!state.pending)return;
@@ -59,7 +68,7 @@ export function createCleanupController({api,storage,confirm,changed=()=>{},upda
         await confirm('Retry the same cleanup request? A confirmed request returns its original result without deleting again.','Retry cleanup');
         if(disposed)return;
         persist(state.pending);await finish(await api.clean(productId,state.pending));
-      }catch(error){if(error!=='cancel'&&error!=='close')report(error);}finally{state.busy=false;notify();}
+      }catch(error){if(error!=='cancel'&&error!=='close')await failed(error);}finally{state.busy=false;notify();}
     },
     async discardObsolete(){
       if(!state.ready||state.busy||!state.pending||!state.missing||!state.obsolete)return;

@@ -41,3 +41,9 @@ test('failed removal of durable confirmed request keeps it recoverable instead o
 test('leaving during confirmation cancels an unsubmitted cleanup',async()=>{
  const f=fixture();let controller;f.options.confirm=async()=>{controller.dispose();};controller=f.make();await controller.initialize('product',null);await controller.start({ids:['1']});assert.equal(f.calls.length,0);assert.equal(f.saved.size,0);
 });
+test('proven missing/protected cleanup rolls back and unlocks refresh while a conflicting request stays retained',async()=>{
+ for(const code of ['HISTORY_PROTECTED_OR_MISSING','PRODUCT_NOT_FOUND','CLEANUP_CHANGED','IDEMPOTENCY_CONFLICT']){
+  const f=fixture();let refreshes=0;f.options.updated=()=>{refreshes++;};f.api.clean=async()=>{throw Object.assign(Error(code),{code});};const c=f.make();await c.initialize('product',null);await c.start({ids:['1']});
+  if(code==='IDEMPOTENCY_CONFLICT'){assert.ok(c.state.pending);assert.equal(refreshes,0);}else{assert.equal(c.state.pending,null);assert.equal(f.saved.size,0);assert.equal(refreshes,1);}
+ }
+});
