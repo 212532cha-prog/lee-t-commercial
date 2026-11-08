@@ -58,16 +58,16 @@ async function* records(path,limit){
  }if(buffer.length)throw new AuthError('INCOMPLETE_BACKUP');}finally{await handle.close();}
 }
 export async function validateArchive(path,meta,{limit=8589934592,stageDir,onRow}={}){
- let header,complete=false,lines=0,current,file,bytes=0,assetHash;const digest=hash(),assets=new Set(),expectedAssets=new Set(),counts=new Map(),productIds=new Set(),balanceIds=new Set();let administrators=0;const cleanupRequests=[];
+ let header,complete=false,lines=0,current,file,bytes=0,assetHash;const digest=hash(),assets=new Set(),expectedAssets=new Set(),counts=new Map(),productIds=new Set(),balanceIds=new Set();let administrators=0;const cleanupRequests=[],historyCleanups=[];
  try{
   for await(const {row,line}of records(path,limit)){
    if(complete)throw new AuthError('INVALID_BACKUP');
    if(row.type==='complete'){if(!header||current||row.sha256!==digest.digest('hex')||row.lines!==lines)throw new AuthError('BACKUP_CHECKSUM');complete=true;continue;}
    digest.update(line);lines++;
    if(!header){if(row.type!=='header'||row.format!=='TATLEE-WAREHOUSE'||row.version!==1||!Number.isFinite(new Date(row.snapshotAt).getTime()))throw new AuthError('INVALID_BACKUP');
-    // Migrations 8 and 9 leave the archived table layout intact.
+    // Migrations 8 through 10 leave the archived table layout intact.
     const latest = meta.migrations.at(-1)?.version;
-    const compatibleVersions = latest === 9 ? [9,8,7] : latest === 8 ? [8,7] : [latest];
+    const compatibleVersions = latest === 10 ? [10,9,8,7] : latest === 9 ? [9,8,7] : latest === 8 ? [8,7] : [latest];
     const compatible = compatibleVersions.some(version=>JSON.stringify(row.meta)===JSON.stringify({
      ...meta,migrations:meta.migrations.filter(row=>row.version<=version),
     }));
@@ -78,7 +78,7 @@ export async function validateArchive(path,meta,{limit=8589934592,stageDir,onRow
    if(row.type==='row'){
     if(current||assets.size)throw new AuthError('INVALID_BACKUP_ORDER');const table=meta.tables.find(t=>t.name===row.table);if(!table||!Array.isArray(row.values)||row.values.length!==table.columns.length)throw new AuthError('INVALID_BACKUP_ROW');
     const index=meta.tables.indexOf(table);if([...counts.keys()].some(n=>meta.tables.findIndex(t=>t.name===n)>index))throw new AuthError('INVALID_BACKUP_ORDER');counts.set(row.table,(counts.get(row.table)||0)+1);
-    const record=Object.fromEntries(table.columns.map((c,i)=>[c,row.values[i]]));if(row.table==='file_cleanup')cleanupRequests.push(record);if(row.table==='products')productIds.add(record.id);if(row.table==='inventory_balances')balanceIds.add(record.product_id);if(row.table==='users'&&record.role==='admin'&&record.active)administrators++;if(row.table==='products'&&record.photo_key)expectedAssets.add('product-photos/'+record.photo_key);if(row.table==='users'&&record.avatar_key)expectedAssets.add('avatars/'+record.avatar_key);
+    const record=Object.fromEntries(table.columns.map((c,i)=>[c,row.values[i]]));if(row.table==='file_cleanup')cleanupRequests.push(record);if(row.table==='inventory_cleanup_requests')historyCleanups.push(record);if(row.table==='products')productIds.add(record.id);if(row.table==='inventory_balances')balanceIds.add(record.product_id);if(row.table==='users'&&record.role==='admin'&&record.active)administrators++;if(row.table==='products'&&record.photo_key)expectedAssets.add('product-photos/'+record.photo_key);if(row.table==='users'&&record.avatar_key)expectedAssets.add('avatars/'+record.avatar_key);
     if(onRow)await onRow(table,row.values);continue;
    }
    if(row.type==='file'){
@@ -94,6 +94,7 @@ export async function validateArchive(path,meta,{limit=8589934592,stageDir,onRow
    throw new AuthError('INVALID_BACKUP');
   }
   for(const record of cleanupRequests){const kind=record.asset_kind||'product',key=record.file_key;if(kind==='product'||kind==='avatar'){if(typeof key!=='string'||!/^[a-f\d-]{36}\.(jpg|png)$/.test(key)||expectedAssets.has((kind==='product'?'product-photos/':'avatars/')+key))throw new AuthError('BACKUP_CLEANUP_INVALID');}else if(kind==='export'){if(typeof key!=='string'||!/^([a-f\d-]{36})\.(pdf|xlsx|partial|spool|work)$/.test(key))throw new AuthError('BACKUP_CLEANUP_INVALID');}else throw new AuthError('BACKUP_CLEANUP_INVALID');}
+  if(historyCleanups.some(r=>!Number.isInteger(r.deleted_count)||r.deleted_count<0||(r.backup_id===null&&(r.deleted_count!==0||r.has_more!==false))))throw new AuthError('BACKUP_CLEANUP_RESULT_INVALID');
   if(administrators!==1||productIds.size!==balanceIds.size||[...productIds].some(id=>!balanceIds.has(id)))throw new AuthError('BACKUP_INTEGRITY');
   if(!complete||[...expectedAssets].some(k=>!validAsset(k))||JSON.stringify([...assets].sort())!==JSON.stringify([...expectedAssets].sort()))throw new AuthError('INCOMPLETE_BACKUP');
   return {header,...await fileHash(path)};

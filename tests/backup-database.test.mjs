@@ -99,3 +99,21 @@ test('direct download cleans up a failed transfer and leaves scheduled backup co
  assert.equal((await backup.settings()).path1,path1);
  assert.equal((await backup.settings()).path2,path2);
 });
+
+test('migration 10 accepts compatible archived layouts from 7, 8 and 9 while rejecting corrupted cleanup results',async()=>{
+ const saved=await create(),path=(await pool.query('SELECT path FROM backup_runs WHERE id=$1',[saved.id])).rows[0].path,bytes=await readFile(path),meta=await metadata(pool);
+ assert.equal(meta.migrations.at(-1).version,10);
+ for(const version of [7,8,9]){
+  const legacy=rewriteArchive(bytes,rows=>{rows[0].meta.migrations=rows[0].meta.migrations.filter(row=>row.version<=version);});
+  const uploaded=await backup.upload(admin.token,admin.csrf,[legacy]);assert.ok(uploaded.id);
+ }
+ const corrupt=rewriteArchive(bytes,rows=>{
+  const table=meta.tables.find(row=>row.name==='inventory_cleanup_requests');
+  const record={id:randomUUID(),product_id:p.id,user_id:admin.user.id,fingerprint:'invalid',backup_id:null,deleted_count:1,has_more:false,snapshot_at:new Date().toISOString()};
+  const index=meta.tables.indexOf(table),at=rows.findIndex(row=>row.type==='row'&&meta.tables.findIndex(table=>table.name===row.table)>index);
+  const value={type:'row',table:table.name,values:table.columns.map(column=>record[column])};
+  if(at<0)rows.push(value);else rows.splice(at,0,value);
+ });
+ await assert.rejects(backup.upload(admin.token,admin.csrf,[corrupt]),error=>error.code==='BACKUP_CLEANUP_RESULT_INVALID');
+ assert.equal((await catalog.detail(p.id)).quantity,0);assert.equal((await state()).maintenance,false);
+});

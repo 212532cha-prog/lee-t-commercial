@@ -123,7 +123,9 @@ test('pre-pairing archives restore business data and clear local device credenti
   const path = join(directory, 'before-pairing.whb');
   const beforeRename = join(directory, 'before-rename.whb');
   await pool.query("UPDATE users SET real_name='Chai Lee Tzar' WHERE role='admin'");
-  await pool.query('DELETE FROM schema_migrations WHERE version=9');
+  // Recreate the pre-10 constraint and migration ledger before taking genuine 8/7 snapshots.
+  await pool.query('ALTER TABLE inventory_cleanup_requests DROP CONSTRAINT cleanup_result_valid; ALTER TABLE inventory_cleanup_requests ALTER COLUMN backup_id SET NOT NULL');
+  await pool.query('DELETE FROM schema_migrations WHERE version>=9');
   await snapshot(pool, beforeRename, directory);
   // Version 8 changes only tables absent from the old archive format.
   await pool.query('DELETE FROM schema_migrations WHERE version=8');
