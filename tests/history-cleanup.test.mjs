@@ -31,3 +31,37 @@ test('employee, backup restriction and maintenance cannot bypass cleanup checks'
 test('permanent product delete cascades balances/history/drafts/requests/notifications/checkpoints only for target',async()=>{await stock.commit(staff.token,staff.csrf,{requestId:randomUUID(),kind:'outbound',items:[{productId:p.id,quantity:1},{productId:q.id,quantity:2}]});await stock.saveDraft(staff.token,staff.csrf,{kind:'inbound',expectedRevision:'0',items:[{productId:p.id,quantity:2},{productId:q.id,quantity:3}]});await old();const token=(await catalog.detail(p.id)).qrToken;await catalog.delete(p.id);for(const table of ['inventory_balances','inventory_events','stock_draft_items','stock_request_items','negative_notifications','inventory_checkpoints'])assert.equal((await pool.query(`SELECT * FROM ${table} WHERE product_id=$1`,[p.id])).rows.length,0);const draft=(await stock.draft(staff.token)).draft;assert.equal(draft.items.length,1);assert.equal(draft.items[0].productId,q.id);assert.equal((await catalog.detail(q.id)).quantity,-2);await assert.rejects(catalog.resolveToken(token),e=>e.code==='PRODUCT_NOT_FOUND_OR_DELETED');});
 test('cleanup rechecks revoked authorization after a successful backup and deletes nothing',async()=>{await move('inbound',10);await old();cleanup.fault=async({phase,db})=>{if(phase==='after-backup'){const service=new AuthService({query:db.query.bind(db)});await service.logout(admin.token);}};await assert.rejects(clean({cutoff:'2099-01-01'}),e=>e.status===401);assert.equal((await pool.query('SELECT * FROM inventory_events WHERE product_id=$1',[p.id])).rows.length,1);assert.equal((await catalog.detail(p.id)).quantity,10);assert.equal((await pool.query('SELECT * FROM backup_runs')).rows.length,1);});
 test('cutoff cleanup exposes bounded batches and each retry preserves the compressed balance baseline',async()=>{await pool.query("INSERT INTO inventory_events(product_id,kind,quantity_delta,before_quantity,after_quantity,created_by,request_id,created_at) SELECT $1,'inbound',1,g-1,g,$2,('00000000-0000-4000-8000-'||lpad(g::text,12,'0'))::uuid,clock_timestamp()-INTERVAL '169 hours' FROM generate_series(1,5100) g",[p.id,admin.user.id]);await pool.query('UPDATE inventory_balances SET quantity=5100,version=5100 WHERE product_id=$1',[p.id]);const a=await clean({cutoff:'2099-01-01'});assert.equal(a.deleted,5000);assert.equal(a.hasMore,true);const b=await clean({cutoff:'2099-01-01'});assert.equal(b.deleted,100);assert.equal(b.hasMore,false);assert.equal((await catalog.detail(p.id)).quantity,5100);assert.equal((await catalog.detail(p.id)).inventoryVersion,'5100');assert.equal((await pool.query('SELECT * FROM inventory_events')).rows.length,0);await move('outbound',100);assert.equal((await catalog.detail(p.id)).quantity,5000);});
+
+test('empty cleanup is durably idempotent after protected history ages and round-trips in a verified backup',async()=>{
+ await move('inbound',10);const input={requestId:randomUUID(),cutoff:'2099-01-01',restoreMarker:(await stock.history(admin.token,p.id)).restoreMarker};
+ const first=await clean(input);assert.equal(first.deleted,0);assert.equal(first.backupId,null);assert.equal(first.hasMore,false);assert.ok(first.snapshotAt);
+ assert.deepEqual(await cleanup.status(admin.token,p.id,input.requestId),first);
+ await old();assert.deepEqual(await clean(input),first);assert.equal((await events()).length,1);
+ assert.equal(Number((await pool.query('SELECT count(*) AS n FROM backup_runs')).rows[0].n),0);
+ const saved=await backup.create(admin.token,admin.csrf);const path=(await pool.query('SELECT path FROM backup_runs WHERE id=$1',[saved.id])).rows[0].path;
+ await validateArchive(path,await metadata(pool));
+ await clean({cutoff:'2099-01-01'});assert.equal((await events()).length,0);
+ // Restore revokes sessions and changes the marker; the empty-result ledger must survive intact.
+ const user=(await pool.query('SELECT password_hash FROM users WHERE id=$1',[admin.user.id])).rows[0];assert.ok(user.password_hash);
+ await backup.restore(admin.token,admin.csrf,{id:saved.id,confirm:'restore-entire-system'});
+ assert.equal((await pool.query('SELECT * FROM inventory_events WHERE product_id=$1',[p.id])).rows.length,1);
+ const row=(await pool.query('SELECT * FROM inventory_cleanup_requests WHERE id=$1',[input.requestId])).rows[0];assert.equal(row.deleted_count,0);assert.equal(row.backup_id,null);
+});
+
+test('cleanup status enforces owner, product, role and missing-result boundaries',async()=>{
+ await move('inbound',10);await old();const input={requestId:randomUUID(),ids:[(await events())[0].id]},result=await clean(input);
+ assert.deepEqual(await cleanup.status(admin.token,p.id,input.requestId),result);
+ await assert.rejects(cleanup.status(staff.token,p.id,input.requestId),e=>e.code==='FORBIDDEN');
+ await assert.rejects(cleanup.status(admin.token,q.id,input.requestId),e=>e.code==='CLEANUP_REQUEST_NOT_FOUND');
+ await assert.rejects(cleanup.status(admin.token,p.id,randomUUID()),e=>e.code==='CLEANUP_REQUEST_NOT_FOUND');
+ await auth.logout(admin.token);await assert.rejects(cleanup.status(admin.token,p.id,input.requestId),e=>e.status===401);
+});
+
+test('a restore marker invalidates prepared cleanup before a new backup or any deletion',async()=>{
+ await move('inbound',12);await old();const history=await stock.history(admin.token,p.id),input={requestId:randomUUID(),ids:[history.events[0].id],restoreMarker:history.restoreMarker};
+ await pool.query('UPDATE system_settings SET restore_marker=$1',[randomUUID()]);
+ await assert.rejects(clean(input),e=>e.code==='WAREHOUSE_RESTORED');assert.equal((await events()).length,1);
+ assert.equal(Number((await pool.query('SELECT count(*) AS n FROM backup_runs')).rows[0].n),0);
+ const marker=(await stock.history(admin.token,p.id)).restoreMarker;
+ assert.equal((await clean({...input,restoreMarker:marker})).deleted,1);
+});

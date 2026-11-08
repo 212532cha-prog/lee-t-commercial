@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
+import HistoryCleanup from './HistoryCleanup.vue'
 import { createInventoryClient } from './inventory-api.mjs'
 
 const props = defineProps({ productId: { type: String, required: true } })
@@ -9,6 +10,10 @@ const api = createInventoryClient()
 const product = ref(null)
 const events = ref([])
 const cursor = ref(null)
+const selected = ref([])
+const cleanupLocked = ref(false)
+const cleanupBusy = ref(false)
+const restoreMarker = ref(null)
 const kind = ref('')
 const from = ref('')
 const to = ref('')
@@ -55,7 +60,7 @@ async function load(append = false) {
   request = controller
   loading.value = true
   error.value = ''
-  if (!append) { events.value = []; cursor.value = null }
+  if (!append) { events.value = []; cursor.value = null; selected.value = [] }
   try {
     const [current, history] = await Promise.all([
       api.detail(props.productId, controller.signal),
@@ -67,6 +72,7 @@ async function load(append = false) {
     ])
     if (controller.signal.aborted) return
     product.value = current
+    restoreMarker.value = history.restoreMarker
     offset = Date.parse(history.serverTime) - Date.now()
     clock.value = Date.now()
     events.value = append ? [...events.value, ...history.events] : history.events
@@ -79,6 +85,7 @@ async function load(append = false) {
 }
 
 function begin(row) {
+  if(cleanupLocked.value) return
   error.value = ''
   notice.value = ''
   draft.value = row ? {
@@ -89,8 +96,10 @@ function begin(row) {
   }
 }
 
+async function cleanupUpdated() { selected.value=[];emit('updated');await load() }
+
 async function save() {
-  if (saving.value || !validQuantity.value) return
+  if (cleanupLocked.value || saving.value || !validQuantity.value) return
   const current = { ...draft.value }
   saving.value = true
   error.value = ''
@@ -120,7 +129,7 @@ function canCorrect(row) {
 }
 
 function close() {
-  if (!saving.value) emit('close')
+  if (!saving.value && !cleanupBusy.value) emit('close')
 }
 
 onMounted(() => load())
@@ -128,25 +137,27 @@ onUnmounted(() => { disposed = true; request?.abort(); clearInterval(timer) })
 </script>
 
 <template>
-  <el-dialog :model-value="true" title="Stock history" width="90%" :close-on-click-modal="false" :before-close="done => { if (!saving) { close(); done() } }">
+  <el-dialog :model-value="true" title="Stock history" width="90%" :close-on-click-modal="false" :before-close="done => { if (!saving && !cleanupBusy) { close(); done() } }">
     <section v-loading="loading">
       <template v-if="product"><h2>{{ product.name }}</h2><p>{{ product.productCode }} · Current stock {{ product.quantity }}</p></template>
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
       <el-alert v-if="notice" :title="notice" type="success" :closable="false" />
       <div class="history-toolbar">
-        <el-select v-model="kind" aria-label="Stock event type" placeholder="All stock events" clearable :disabled="loading || saving">
+        <el-select v-model="kind" aria-label="Stock event type" placeholder="All stock events" clearable :disabled="loading || saving || cleanupLocked">
           <el-option v-for="(label, value) in labels" :key="value" :value="value" :label="label" />
         </el-select>
-        <el-date-picker v-model="from" type="date" value-format="YYYY-MM-DD" placeholder="From date" aria-label="From date" :disabled="loading || saving" />
-        <el-date-picker v-model="to" type="date" value-format="YYYY-MM-DD" placeholder="To date" aria-label="To date" :disabled="loading || saving" />
-        <el-select v-model="order" aria-label="History order" :disabled="loading || saving">
+        <el-date-picker v-model="from" type="date" value-format="YYYY-MM-DD" placeholder="From date" aria-label="From date" :disabled="loading || saving || cleanupLocked" />
+        <el-date-picker v-model="to" type="date" value-format="YYYY-MM-DD" placeholder="To date" aria-label="To date" :disabled="loading || saving || cleanupLocked" />
+        <el-select v-model="order" aria-label="History order" :disabled="loading || saving || cleanupLocked">
           <el-option value="newest" label="Newest first" /><el-option value="oldest" label="Oldest first" />
         </el-select>
-        <el-button :disabled="loading || saving" @click="load(false)">Refresh stock history</el-button>
-        <el-button type="primary" :disabled="!product || loading || saving" @click="begin(null)">Set current quantity</el-button>
+        <el-button :disabled="loading || saving || cleanupLocked" @click="load(false)">Refresh stock history</el-button>
+        <el-button type="primary" :disabled="!product || loading || saving || cleanupLocked" @click="begin(null)">Set current quantity</el-button>
       </div>
       <p>Stock history times use Malaysia time. Recent records are protected from deletion for 168 hours. Corrections use record versions and the warehouse server clock.</p>
+      <HistoryCleanup v-if="product" :key="productId+String(restoreMarker)" :product-id="productId" :restore-marker="restoreMarker" :selected="selected" :disabled="loading || saving || !!draft" @locked="cleanupLocked=$event" @busy="cleanupBusy=$event" @updated="cleanupUpdated" />
       <el-table :data="events" empty-text="No stock history">
+        <el-table-column label="Select" width="80"><template #default="{ row }"><input v-model="selected" type="checkbox" :value="row.id" :aria-label="'Select history record '+row.id" :disabled="loading || saving || cleanupLocked || canCorrect(row)" /></template></el-table-column>
         <el-table-column label="Time" min-width="180"><template #default="{ row }">{{ new Date(row.createdAt).toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' }) }}</template></el-table-column>
         <el-table-column label="Type" min-width="100"><template #default="{ row }">{{ labels[row.kind] }}</template></el-table-column>
         <el-table-column prop="beforeQuantity" label="Before" width="90" />
@@ -154,11 +165,11 @@ onUnmounted(() => { disposed = true; request?.abort(); clearInterval(timer) })
         <el-table-column prop="afterQuantity" label="After" width="90" />
         <el-table-column label="Deletion protection" min-width="180"><template #default="{ row }">{{ canCorrect(row) ? new Date(row.protectedUntil).toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur' }) : 'Protection period ended' }}</template></el-table-column>
         <el-table-column label="Action" width="150"><template #default="{ row }">
-          <el-button :disabled="loading || saving || !canCorrect(row)" @click="begin(row)">Correct record</el-button>
+          <el-button :disabled="loading || saving || cleanupLocked || !canCorrect(row)" @click="begin(row)">Correct record</el-button>
         </template></el-table-column>
       </el-table>
-      <el-button v-if="cursor" :disabled="loading || saving" @click="load(true)">Load more history</el-button>
-      <p><el-button :disabled="saving" @click="close">Close stock history</el-button></p>
+      <el-button v-if="cursor" :disabled="loading || saving || cleanupLocked" @click="load(true)">Load more history</el-button>
+      <p><el-button :disabled="saving || cleanupBusy" @click="close">Close stock history</el-button></p>
     </section>
     <el-dialog :model-value="!!draft" :title="draft?.mode === 'overwrite' ? 'Set current quantity' : 'Correct stock record'" append-to-body :close-on-click-modal="false" :before-close="done => { if (!saving) { draft = null; done() } }">
       <el-form v-if="draft" label-position="top" @submit.prevent="save">

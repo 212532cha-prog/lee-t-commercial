@@ -114,14 +114,14 @@ export class StockService{
  }
  async discardDraft(raw,csrf,input){return this.run(raw,csrf,{},async(db,user)=>{const r=await db.query('DELETE FROM stock_drafts WHERE user_id=$1 AND revision=$2 RETURNING user_id',[user.id,key(input.expectedRevision)]);if(!r.rows.length)throw new AuthError('DRAFT_VERSION_CONFLICT',409);return {discarded:true};});}
  async history(raw,productId,filters={}){
-  await this.auth.authorize(raw);identifier(productId);const limit=Number(filters.limit??30);if(!Number.isInteger(limit)||limit<1||limit>100)throw new AuthError('INVALID_LIMIT');
+  return transaction(this.pool,async db=>{await this.auth.authorizeIn(db,raw);identifier(productId);const limit=Number(filters.limit??30);if(!Number.isInteger(limit)||limit<1||limit>100)throw new AuthError('INVALID_LIMIT');
   const oldest=filters.order==='oldest',values=[productId],where=['product_id=$1'];const bind=v=>{values.push(v);return '$'+values.length;};
   if(filters.kind){if(!['inbound','outbound','adjustment'].includes(filters.kind))throw new AuthError('INVALID_KIND');where.push('kind='+bind(filters.kind));}
   for(const [field,op]of [['from','>='],['to','<=']])if(filters[field]){const d=new Date(filters[field]);if(!Number.isFinite(d.getTime()))throw new AuthError('INVALID_DATE');where.push('created_at'+op+bind(d));}
   if(filters.cursor){if(!/^\d+$/.test(filters.cursor)||BigInt(filters.cursor)>9223372036854775807n)throw new AuthError('INVALID_CURSOR');where.push('id'+(oldest?'>':'<')+bind(filters.cursor));}
-  const serverTime=(await this.pool.query('SELECT clock_timestamp() AS now')).rows[0].now;
-  const rows=(await this.pool.query(`SELECT id,kind,before_quantity,quantity_delta,after_quantity,created_at,revision FROM inventory_events WHERE ${where.join(' AND ')} ORDER BY id ${oldest?'ASC':'DESC'} LIMIT ${bind(limit+1)}`,values)).rows;
-  const events=rows.slice(0,limit).map(r=>({id:String(r.id),kind:r.kind,beforeQuantity:Number(r.before_quantity),quantityDelta:Number(r.quantity_delta),afterQuantity:Number(r.after_quantity),createdAt:r.created_at,revision:String(r.revision),protectedUntil:new Date(new Date(r.created_at).getTime()+168*3600000)}));return {serverTime,events,nextCursor:rows.length>limit?events.at(-1).id:null};
+  const context=(await db.query('SELECT clock_timestamp() AS now,restore_marker FROM system_settings WHERE id=1')).rows[0],serverTime=context.now;
+  const rows=(await db.query(`SELECT id,kind,before_quantity,quantity_delta,after_quantity,created_at,revision FROM inventory_events WHERE ${where.join(' AND ')} ORDER BY id ${oldest?'ASC':'DESC'} LIMIT ${bind(limit+1)}`,values)).rows;
+  const events=rows.slice(0,limit).map(r=>({id:String(r.id),kind:r.kind,beforeQuantity:Number(r.before_quantity),quantityDelta:Number(r.quantity_delta),afterQuantity:Number(r.after_quantity),createdAt:r.created_at,revision:String(r.revision),protectedUntil:new Date(new Date(r.created_at).getTime()+168*3600000)}));return {serverTime,restoreMarker:context.restore_marker,events,nextCursor:rows.length>limit?events.at(-1).id:null}; });
  }
  async editHistory(raw,csrf,productId,eventId,input){
   identifier(productId);key(eventId);const value=whole(input.quantity),revision=key(input.expectedRevision);
