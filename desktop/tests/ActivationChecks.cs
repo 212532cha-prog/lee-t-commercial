@@ -53,6 +53,7 @@ internal static class ActivationChecks
         finally { ui.Close(); }
 
         var installed = ActivationBridge.Installed(Path.GetDirectoryName(config)!);
+        ActivationBridge.RequireProtectedFile(Path.Combine(root,"payload","app","src","commercial","license.mjs"));
         Require(!installed.CanExportRequestTo(config) && !installed.CanExportRequestTo(Path.Combine(root,"license","license.json")) &&
             installed.CanExportRequestTo(Path.Combine(root,"device-request.json")), "Request export could overwrite installation files.");
         Require((await installed.Send(Status, CancellationToken.None)).GetProperty("state").GetString() == "activation-required",

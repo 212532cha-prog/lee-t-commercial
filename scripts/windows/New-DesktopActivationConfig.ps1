@@ -12,6 +12,15 @@ $ErrorActionPreference='Stop'
 $payload=(Resolve-Path -LiteralPath $PayloadDirectory).Path
 if(-not [IO.Path]::IsPathRooted($LicenseDirectory) -or -not (Test-Path -LiteralPath $IssuerPublicKey -PathType Leaf) -or
    [string]::IsNullOrWhiteSpace($IssuerKeyId) -or $IssuerKeyId.Length -gt 160){throw 'Invalid activation setup settings.'}
+$licensePath=[IO.Path]::GetFullPath($LicenseDirectory)
+$licensePrefix=$licensePath.TrimEnd('\')+'\'
+$payloadPrefix=$payload.TrimEnd('\')+'\'
+if($licensePath -eq [IO.Path]::GetPathRoot($licensePath) -or $licensePrefix.StartsWith($payloadPrefix,[StringComparison]::OrdinalIgnoreCase) -or
+   $payloadPrefix.StartsWith($licensePrefix,[StringComparison]::OrdinalIgnoreCase)){throw 'Use a dedicated activation directory outside the program directory.'}
+if((Test-Path -LiteralPath $licensePath) -and @(Get-ChildItem -LiteralPath $licensePath -Force).Count){throw 'Existing activation data was found. Preserve it for repair or migration.'}
+for($parent=[IO.DirectoryInfo]::new($licensePath);$null -ne $parent;$parent=$parent.Parent){
+ if($parent.Exists -and ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Activation data cannot use a linked directory.'}
+}
 if($ActivationEndpoint){
  $endpoint=$null
  if(-not [uri]::TryCreate($ActivationEndpoint,[UriKind]::Absolute,[ref]$endpoint) -or $endpoint.Scheme -ne 'https' -or
@@ -54,11 +63,11 @@ foreach($item in $programItems){
   Set-Acl -LiteralPath $item.FullName -AclObject $security
  }else{Set-ActivationFileAccess $item.FullName}
 }
-Protect-Directory ([IO.Path]::GetFullPath($LicenseDirectory)) 'RX'
+Protect-Directory $licensePath 'RX'
 Copy-Item -LiteralPath $IssuerPublicKey -Destination $publicKey
 Set-ActivationFileAccess $publicKey
 $environment=@{
- LEE_T_LICENSE_DIR=[IO.Path]::GetFullPath($LicenseDirectory)
+ LEE_T_LICENSE_DIR=$licensePath
  LEE_T_ISSUER_PUBLIC_KEY_PATH=$publicKey
  LEE_T_ISSUER_KEY_ID=$IssuerKeyId
 }

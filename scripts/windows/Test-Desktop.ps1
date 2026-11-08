@@ -25,6 +25,10 @@ try {
  Copy-Item -LiteralPath (Join-Path $root 'scripts\desktop-activation.mjs') -Destination (Join-Path $activationPayload 'app\scripts\desktop-activation.mjs')
  Copy-Item -LiteralPath (Join-Path $root 'src') -Destination (Join-Path $activationPayload 'app\src') -Recurse
  Copy-Item -LiteralPath (Join-Path $root 'package.json') -Destination (Join-Path $activationPayload 'app\package.json')
+ foreach($path in @('runtime\node.exe','app\scripts','app\scripts\desktop-activation.mjs','app\src\commercial\license.mjs')){
+  & icacls.exe (Join-Path $activationPayload $path) '/grant:r' '*S-1-5-32-545:F' | Out-Null
+  if($LASTEXITCODE -ne 0){throw 'Cannot stage copied-file permission regression.'}
+ }
  & node (Join-Path $root 'desktop\tests\prepare-activation-fixture.mjs') $activationRoot prepare
  if($LASTEXITCODE -ne 0){throw 'Activation signing fixture failed.'}
  & (Join-Path $PSScriptRoot 'New-DesktopActivationConfig.ps1') -PayloadDirectory $activationPayload -LicenseDirectory (Join-Path $activationRoot 'license') -IssuerPublicKey (Join-Path $activationRoot 'issuer.pem') -IssuerKeyId 'desktop-ui-test' -ActivationEndpoint 'https://activation.example.test/redeem'
