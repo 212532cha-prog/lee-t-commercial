@@ -1,6 +1,6 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$DesktopTestExecutable,[string]$ManagementDirectory)
+param([Parameter(Mandatory=$true)][string]$DesktopTestExecutable,[string]$ManagementDirectory,[Parameter(Mandatory=$true)][string]$ActivationPayloadDirectory)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $temporary=Join-Path ([IO.Path]::GetTempPath()) ('leet-desktop-test-'+[guid]::NewGuid().ToString('N'))
@@ -9,13 +9,28 @@ $fixture=$null
 $test=$null
 $cluster=$null
 $clusterStarted=$false
-$fixtureKeys=@('PGHOST','PGPORT','PGUSER','PGPASSWORD','PGDATABASE','WAREHOUSE_NATIVE_PG','LEET_DESKTOP_TEST_RUOYI_DIR','LEET_DESKTOP_TEST_ROOT','LEET_DESKTOP_TEST_CERT','LEET_DESKTOP_TEST_PASSWORD','LEET_DESKTOP_MANAGEMENT')
+$fixtureKeys=@('PGHOST','PGPORT','PGUSER','PGPASSWORD','PGDATABASE','WAREHOUSE_NATIVE_PG','LEET_DESKTOP_TEST_RUOYI_DIR','LEET_DESKTOP_TEST_ROOT','LEET_DESKTOP_TEST_CERT','LEET_DESKTOP_TEST_PASSWORD','LEET_DESKTOP_MANAGEMENT','LEET_ACTIVATION_TEST_ROOT','LEET_ACTIVATION_TEST_SOURCE','LEET_ACTIVATION_TEST_NODE')
 $previousFixtureEnvironment=@{}
 foreach($key in $fixtureKeys){$previousFixtureEnvironment[$key]=[Environment]::GetEnvironmentVariable($key,'Process')}
 try {
  $certificate=& (Join-Path $PSScriptRoot 'New-LanCertificate.ps1') -Address '192.168.10.25' -Directory $temporary -TrustLocally
  $env:LEET_DESKTOP_TEST_PFX=$certificate.PfxPath
  $env:LEET_DESKTOP_TEST_PASSPHRASE=$certificate.Passphrase
+ $activationRoot=Join-Path $temporary 'activation-ui'
+ $activationPayload=Join-Path $activationRoot 'payload'
+ foreach($folder in @('desktop','runtime','app\scripts')){New-Item -ItemType Directory -Path (Join-Path $activationPayload $folder) -Force | Out-Null}
+ Copy-Item -LiteralPath (Join-Path $ActivationPayloadDirectory 'desktop\LeeT.Warehouse.exe') -Destination (Join-Path $activationPayload 'desktop\LeeT.Warehouse.exe')
+ Copy-Item -LiteralPath (Get-Command node.exe).Source -Destination (Join-Path $activationPayload 'runtime\node.exe')
+ # Copy the real bridge and its built-in-only dependencies for the fixed installed-path check.
+ Copy-Item -LiteralPath (Join-Path $root 'scripts\desktop-activation.mjs') -Destination (Join-Path $activationPayload 'app\scripts\desktop-activation.mjs')
+ Copy-Item -LiteralPath (Join-Path $root 'src') -Destination (Join-Path $activationPayload 'app\src') -Recurse
+ Copy-Item -LiteralPath (Join-Path $root 'package.json') -Destination (Join-Path $activationPayload 'app\package.json')
+ & node (Join-Path $root 'desktop\tests\prepare-activation-fixture.mjs') $activationRoot prepare
+ if($LASTEXITCODE -ne 0){throw 'Activation signing fixture failed.'}
+ & (Join-Path $PSScriptRoot 'New-DesktopActivationConfig.ps1') -PayloadDirectory $activationPayload -LicenseDirectory (Join-Path $activationRoot 'license') -IssuerPublicKey (Join-Path $activationRoot 'issuer.pem') -IssuerKeyId 'desktop-ui-test' -ActivationEndpoint 'https://activation.example.test/redeem'
+ $env:LEET_ACTIVATION_TEST_ROOT=$activationRoot
+ $env:LEET_ACTIVATION_TEST_SOURCE=$root
+ $env:LEET_ACTIVATION_TEST_NODE=(Get-Command node.exe).Source
  $fixtureScript=Join-Path $root 'desktop\tests\fixture.mjs'
  if($ManagementDirectory){
   $management=(Resolve-Path -LiteralPath $ManagementDirectory).Path
@@ -58,6 +73,9 @@ try {
  $test.Refresh()
  Get-Content -LiteralPath (Join-Path $temporary 'stdout.log')
  Get-Content -LiteralPath (Join-Path $temporary 'stderr.log')
+ $qa=Join-Path $env:RUNNER_TEMP 'leet-activation-preview'
+ New-Item -ItemType Directory -Path $qa -Force | Out-Null
+ Get-ChildItem -LiteralPath $activationRoot -Filter '*.png' | Copy-Item -Destination $qa
  Write-Output ('Desktop process exit code: '+$test.ExitCode)
  if($null -eq $test.ExitCode -or $test.ExitCode -ne 0){throw 'Desktop window tests failed.'}
 } finally {

@@ -15,6 +15,7 @@ internal static class Smoke
         {
             try
             {
+                await ActivationChecks.Run();
                 var grid = (Grid)window.Content;
                 var browser = grid.Children.OfType<WebView2>().Single();
                 var retry = ((StackPanel)grid.Children[1]).Children.OfType<Button>().Single();

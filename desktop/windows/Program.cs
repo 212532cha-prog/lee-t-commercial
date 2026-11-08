@@ -33,6 +33,21 @@ internal static class Program
         }
 
         var application = new Application();
+        if (args.SequenceEqual(new[] { "--activate" }))
+        {
+            try
+            {
+                var activation = new ActivationWindow(ActivationBridge.Installed(AppContext.BaseDirectory));
+                activation.Closed += (_, _) => application.Shutdown(activation.ActivationAccepted ? 0 : 10);
+                return application.Run(activation);
+            }
+            catch
+            {
+                MessageBox.Show("Start activation from the LEE T setup or repair process with administrator approval.", "LEE T Warehouse", MessageBoxButton.OK, MessageBoxImage.Information);
+                return 3;
+            }
+        }
+        if (args.Length != 0) return 2;
         return application.Run(CreateWindow());
     }
 
