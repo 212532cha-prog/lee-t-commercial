@@ -91,6 +91,9 @@ jobs:
       - name: Native SCM service and graceful shutdown
         shell: powershell
         run: ./scripts/windows/Test-Service.ps1
+      - name: Standard-user desktop execution and protected directory access
+        shell: powershell
+        run: ./scripts/windows/Test-DirectoryPermissions.ps1
       - name: Generated LAN certificate trusted HTTPS and hostname enforcement
         shell: powershell
         run: ./scripts/windows/Test-Certificate.ps1

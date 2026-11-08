@@ -3,7 +3,7 @@
 param([string]$AppRoot=([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))),[string]$DataDir,[string]$BackupPath1,[string]$BackupPath2,[string]$Address,[int]$Port=3443,[string]$PostgresService,[switch]$NoStart,[string]$BundledNodePath,[switch]$OfflineDependencies,[switch]$Commercial,[string]$LicenseDir,[string]$IssuerPublicKeyPath,[string]$IssuerKeyId,[string]$BundledPostgresDirectory,[string]$DatabaseClusterRoot,[string]$HttpsHostname,[string]$HttpsPfxPath,[switch]$GuiSetup,[string]$RuoyiAdminDirectory)
 $ErrorActionPreference='Stop'
 function Read-PlainSecret([string]$Prompt) { $secure=Read-Host $Prompt -AsSecureString;$pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure);try{return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)}finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)} }
-function Protect-Directory([string]$Path,[string]$ServiceAccess) { New-Item -ItemType Directory -Path $Path -Force | Out-Null;& icacls.exe $Path '/inheritance:r' '/grant:r' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' ('*S-1-5-19:(OI)(CI)'+$ServiceAccess) '/C' | Out-Null;if($LASTEXITCODE -ne 0){throw 'Cannot apply required NTFS permissions.'} }
+. (Join-Path $PSScriptRoot 'Protect-Directory.ps1')
 $serviceName = if($Commercial){'LeeTCommercialWarehouse'}else{'TatLeeWarehouse'}
 $displayName = if($Commercial){'LEE T Commercial Warehouse'}else{'LEE T Warehouse'}
 if(Get-Service $serviceName -ErrorAction SilentlyContinue){throw 'Service already exists. Use the update/migration instructions; reinstall never resets a database.'}
@@ -135,7 +135,7 @@ $start=[Diagnostics.ProcessStartInfo]::new($node,'"'+(Join-Path $AppRoot 'script
 $start.WorkingDirectory=$AppRoot;$start.UseShellExecute=$false;$start.RedirectStandardInput=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true;$start.EnvironmentVariables['WAREHOUSE_CONFIG_PATH']=$configPath
 $process=[Diagnostics.Process]::new();$process.StartInfo=$start
 try{[void]$process.Start();$process.StandardInput.WriteLine((@{initialPassword=$initial;backupPath1=$BackupPath1;backupPath2=$BackupPath2}|ConvertTo-Json -Compress));$process.StandardInput.Close();$output=$process.StandardOutput.ReadToEnd();$errors=$process.StandardError.ReadToEnd();$process.WaitForExit();if($process.ExitCode -ne 0){throw 'Database initialization failed. Check the dedicated database role, PostgreSQL 17 and loopback-only listener. Protected configuration was preserved for diagnosis.'};Write-Output $output.Trim()}finally{$initial=$null;$databaseUrl=$null;$process.Dispose()}
-Protect-Directory $AppRoot 'RX'
+Protect-Directory $AppRoot 'RX' -AllowDesktopRead
 $credential=[Management.Automation.PSCredential]::new('NT AUTHORITY\LocalService',[Security.SecureString]::new())
 New-Service -Name $serviceName -DisplayName $displayName -BinaryPathName ('"'+$executable+'" "'+$configPath+'"') -StartupType Automatic -DependsOn $PostgresService -Credential $credential | Out-Null
 & sc.exe failure $serviceName reset= 86400 actions= 'restart/5000/restart/15000/none/0' | Out-Null
