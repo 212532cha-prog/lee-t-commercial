@@ -9,3 +9,18 @@ Build the desktop with `dotnet publish desktop/windows/LeeT.Desktop.csproj -c Re
 `Test-Desktop.ps1` retains the existing unavailable-service, recovery, cookie reload and external-navigation checks. With `-ManagementDirectory`, it additionally starts an isolated native PostgreSQL 17 cluster, runs the actual warehouse services over locally trusted HTTPS, and tests the built management UI inside the real Windows app. It signs in, checks Administrator branding, opens all nine management module entries without failed API/script requests, and verifies session reload. No TLS bypass or test fallback is enabled. The Linux management workflow separately exercises all business flows against PostgreSQL, including real exports, backups and restores.
 
 This remains a test installer: activation still uses a previously imported test license. The in-app customer activation flow, signed installer/update distribution, repair and upgrade acceptance, physical printers/cameras/LAN tests, and customer-machine verification remain release work. Automated Windows checks do not attest to the customer's installation or to mobile store approval.
+
+## Private activation bridge
+
+`scripts/desktop-activation.mjs` is the child-process foundation for the activation window. It does not expose a local web route or change startup/installer behavior. A native host must start the bundled Node executable directly (no shell), inherit the protected installation configuration, send exactly one JSON envelope on stdin, close stdin and collect the single JSON response. Activation codes must never be command-line arguments, log entries or environment variables. The host must serialize operations and bound/terminate child processes; it must not accept executable paths, trust settings or endpoint overrides from a web page.
+
+| Input (`schema: 1`) | Successful output | Behavior |
+| --- | --- | --- |
+| `action: "status"` | `state: "activated"`, entitled `version`, or `state: "activation-required"` | Read-only license and hardware check; no new identity |
+| `action: "request"` | `request` | Creates the installation ID once and exports hashed device claims for offline signing |
+| `action: "activate", code` | `state: "activated"` | Existing HTTPS redemption with installed issuer trust and device/signature/version verification |
+| `action: "import", license` | `state: "activated"` | Imports a signed JSON envelope for an already exported installation; never creates/rebinds identity |
+
+Failures contain only a stable error code; hardware/connection/signature exceptions and submitted values are never returned or logged. Stdin is limited to 16 KiB of actual UTF-8 bytes, decoded strictly. Unknown actions and fields are refused, including attempts to supply configuration or file paths. Invalid imports and failed online requests preserve the existing license. Missing or invalid local licensing returns activation-required; it never unlocks the warehouse.
+
+`node --test tests/commercial-desktop-activation.test.mjs` covers offline activation, altered/wrong-device refusal with byte-for-byte license preservation, online signing, operation overlap, stable installation identity, input bounds, hostile fields and the actual child process's output/exit behavior. This protocol is not yet connected to the native window or the installer. Production cloud signing configuration remains a separate acceptance gate.
