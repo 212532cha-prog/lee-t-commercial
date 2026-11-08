@@ -9,7 +9,7 @@ const safe=value=>{if(!Number.isSafeInteger(value))throw new AuthError('QUANTITY
 const key=value=>{if(!['number','string'].includes(typeof value)||!/^\d+$/.test(String(value))||BigInt(value)>9223372036854775807n)throw new AuthError('INVALID_VERSION');return String(value);};
 export function stockLines(input){
  if(!Array.isArray(input)||!input.length||input.length>1000)throw new AuthError('INVALID_ITEMS');
- const seen=new Set();return input.map(row=>{const productId=identifier(row?.productId);if(seen.has(productId))throw new AuthError('DUPLICATE_PRODUCT');seen.add(productId);return {productId,quantity:whole(row.quantity,{positive:true})};}).sort((a,b)=>a.productId.localeCompare(b.productId));
+ const seen=new Set();return input.map(row=>{const productId=identifier(row?.productId),canonical=productId.toLowerCase();if(seen.has(canonical))throw new AuthError('DUPLICATE_PRODUCT');seen.add(canonical);return {productId,quantity:whole(row.quantity,{positive:true})};}).sort((a,b)=>a.productId.localeCompare(b.productId));
 }
 async function negative(db,id,before,after){
  if(before>=0&&after<0)await db.query('INSERT INTO negative_notifications(product_id) VALUES($1) ON CONFLICT(product_id) DO UPDATE SET started_at=clock_timestamp(),read_at=NULL',[id]);
@@ -36,11 +36,30 @@ export class StockService{
  async run(raw,csrf,options,fn){return transaction(this.pool,async db=>{const actor=await this.auth.authorizeIn(db,raw,{write:true,csrf,...options});return fn(db,actor.user);});}
  async result(db,id,userId){const request=(await db.query('SELECT user_id FROM stock_requests WHERE id=$1',[id])).rows[0];if(!request||request.user_id!==userId)throw new AuthError('REQUEST_NOT_FOUND',404);const items=(await db.query('SELECT i.product_id,i.quantity,i.after_quantity,i.version,p.name,p.product_code FROM stock_request_items i JOIN products p ON p.id=i.product_id WHERE request_id=$1 ORDER BY product_id',[id])).rows;return {requestId:id,committed:true,items:items.map(r=>({productId:r.product_id,name:r.name,productCode:r.product_code,quantity:Number(r.quantity),afterQuantity:Number(r.after_quantity),version:String(r.version)}))};}
  async status(raw,id){identifier(id);const a=await this.auth.authorize(raw);return this.result(this.pool,id,a.user.id);}
+ async preflight(raw,csrf,input){
+  if(!['inbound','outbound'].includes(input.kind))throw new AuthError('INVALID_KIND');
+  const lines=stockLines(input.items);
+  return this.run(raw,csrf,{},async db=>{
+   const rows=(await db.query('SELECT p.id,p.name,p.product_code,b.quantity,b.version FROM products p JOIN inventory_balances b ON b.product_id=p.id WHERE p.id=ANY($1::uuid[])',[lines.map(line=>line.productId)])).rows;
+   if(rows.length!==lines.length)throw new AuthError('PRODUCT_NOT_FOUND_OR_DELETED',409);
+   const byId=new Map(rows.map(row=>[row.id,row]));
+   const items=lines.map(line=>{const row=byId.get(line.productId.toLowerCase()),quantity=whole(row.quantity);return {productId:row.id,name:row.name,productCode:row.product_code,quantity,requested:line.quantity,afterQuantity:safe(quantity+(input.kind==='inbound'?line.quantity:-line.quantity)),version:String(row.version)};});
+   return {items,expectedVersions:Object.fromEntries(items.map(row=>[row.productId,row.version])),restoreMarker:(await db.query('SELECT restore_marker FROM system_settings WHERE id=1')).rows[0].restore_marker};
+  });
+ }
  async commit(raw,csrf,input){
   const id=identifier(input.requestId),kind=input.kind;if(!['inbound','outbound','adjustment'].includes(kind))throw new AuthError('INVALID_KIND');
   const lines=kind==='adjustment'?[{productId:identifier(input.productId),quantity:whole(input.quantity),expectedVersion:key(input.expectedVersion)}]:stockLines(input.items);
-  const fingerprint=createHash('sha256').update(JSON.stringify({kind,lines})).digest('hex');
+  let expectedVersions;
+  if(input.expectedVersions!==undefined){
+   if(!['inbound','outbound'].includes(kind)||!input.expectedVersions||typeof input.expectedVersions!=='object'||Array.isArray(input.expectedVersions)||Object.keys(input.expectedVersions).length!==lines.length)throw new AuthError('INVALID_VERSION');
+   expectedVersions=Object.fromEntries(lines.map(line=>{const lookup=Object.hasOwn(input.expectedVersions,line.productId)?line.productId:line.productId.toLowerCase();if(!Object.hasOwn(input.expectedVersions,lookup))throw new AuthError('INVALID_VERSION');return [line.productId,key(input.expectedVersions[lookup])];}));
+  }
+  const hasMarker=Object.hasOwn(input,'restoreMarker');
+  if(hasMarker&&input.restoreMarker!==null)identifier(input.restoreMarker);
+  const fingerprint=createHash('sha256').update(JSON.stringify({kind,lines,...(expectedVersions&&{expectedVersions}),...(hasMarker&&{restoreMarker:input.restoreMarker})})).digest('hex');
   return this.run(raw,csrf,{admin:kind==='adjustment'},async(db,user)=>{
+   if(hasMarker&&(await db.query('SELECT restore_marker FROM system_settings WHERE id=1')).rows[0].restore_marker!==input.restoreMarker)throw new AuthError('WAREHOUSE_RESTORED',409);
    await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[id]);
    const prior=(await db.query('SELECT * FROM stock_requests WHERE id=$1',[id])).rows[0];
    if(prior){if(prior.user_id!==user.id||prior.fingerprint!==fingerprint)throw new AuthError('IDEMPOTENCY_CONFLICT',409);return this.result(db,id,user.id);}
@@ -50,6 +69,7 @@ export class StockService{
     const b=(await db.query('SELECT quantity,version FROM inventory_balances WHERE product_id=$1',[line.productId])).rows[0];
     const before=whole(b.quantity),after=kind==='adjustment'?line.quantity:safe(before+(kind==='inbound'?line.quantity:-line.quantity));
     if(kind==='adjustment'&&line.expectedVersion!==String(b.version))throw new AuthError('STOCK_VERSION_CONFLICT',409);
+    if(expectedVersions&&expectedVersions[line.productId]!==String(b.version))throw new AuthError('STOCK_VERSION_CONFLICT',409);
     await db.query('INSERT INTO inventory_events(product_id,kind,before_quantity,quantity_delta,after_quantity,created_by,request_id) VALUES($1,$2,$3,$4,$5,$6,$7)',[line.productId,kind,before,safe(after-before),after,user.id,id]);
     const changed=(await db.query('UPDATE inventory_balances SET quantity=$2,version=version+1 WHERE product_id=$1 RETURNING version',[line.productId,after])).rows[0];
     await db.query('INSERT INTO stock_request_items(request_id,product_id,quantity,after_quantity,version) VALUES($1,$2,$3,$4,$5)',[id,line.productId,line.quantity,after,changed.version]);
@@ -79,7 +99,7 @@ export class StockService{
    return {productId,quantity,version:String(changed.version)};
   });
  }
- async draft(raw){const a=await this.auth.authorize(raw);const row=(await this.pool.query('SELECT kind,revision,saved_at FROM stock_drafts WHERE user_id=$1',[a.user.id])).rows[0];if(!row)return {draft:null};const items=(await this.pool.query('SELECT i.product_id,i.quantity,p.name,p.product_code FROM stock_draft_items i JOIN products p ON p.id=i.product_id WHERE user_id=$1 ORDER BY p.name',[a.user.id])).rows;return {draft:{kind:row.kind,revision:String(row.revision),savedAt:row.saved_at,items:items.map(i=>({productId:i.product_id,quantity:Number(i.quantity),name:i.name,productCode:i.product_code}))}};}
+ async draft(raw){return transaction(this.pool,async db=>{const a=await this.auth.authorizeIn(db,raw);const row=(await db.query('SELECT kind,revision,saved_at FROM stock_drafts WHERE user_id=$1',[a.user.id])).rows[0];if(!row)return {draft:null};const items=(await db.query('SELECT i.product_id,i.quantity,p.name,p.product_code FROM stock_draft_items i JOIN products p ON p.id=i.product_id WHERE user_id=$1 ORDER BY p.name',[a.user.id])).rows;return {draft:{kind:row.kind,revision:String(row.revision),savedAt:row.saved_at,items:items.map(i=>({productId:i.product_id,quantity:Number(i.quantity),name:i.name,productCode:i.product_code}))}};});}
  async saveDraft(raw,csrf,input){
   if(!['inbound','outbound'].includes(input.kind))throw new AuthError('INVALID_KIND');const lines=stockLines(input.items);
   return this.run(raw,csrf,{},async(db,user)=>{

@@ -19,8 +19,9 @@ cp "$integration_dir/leet-index.html" "$source_dir/index.html"
 cp "$integration_dir/leet-main.js" "$source_dir/src/leet-main.js"
 cp -R "$integration_dir/src/views/leet" "$source_dir/src/views/"
 cd "$source_dir"
-npm install --ignore-scripts --no-audit --no-fund
+npm install --ignore-scripts --no-audit --no-fund --save-exact jsqr@1.4.0
 npm run build:prod -- --base /admin/
 cp LICENSE dist/RuoYi-LICENSE.txt
+cp node_modules/jsqr/LICENSE dist/jsQR-LICENSE.txt
 mkdir -- "$output"
 cp -R dist/. "$output/"

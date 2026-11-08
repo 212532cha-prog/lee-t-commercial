@@ -8,6 +8,7 @@ import Costs from './Costs.vue'
 import Exports from './Exports.vue'
 import Profile from './Profile.vue'
 import Backups from './Backups.vue'
+import Stock from './Stock.vue'
 import { createDashboardClient, formatCost } from './dashboard-api.mjs'
 import { loadWarehouseDashboard, createAdminTransport } from './warehouse-api.mjs'
 
@@ -15,6 +16,8 @@ const api = createAdminTransport()
 const dashboardApi = createDashboardClient()
 const marking = ref(false)
 const exportScope = ref(null)
+const stockPanel = ref(null)
+const navEpoch = ref(0)
 const restricted = ref(false)
 const maintenance = ref(false)
 let stateTimer
@@ -29,7 +32,7 @@ const hasSession = ref(false)
 const username = ref('')
 const password = ref('')
 let activeRequest
-const navigation = { overview: 'Overview', products: 'Products', masters: 'Master data', counts: 'Stocktakes', costs: 'Product costs', exports: 'Data export', team: 'Employees and devices', backups: 'Backups', profile: 'My account' }
+const navigation = { overview: 'Overview', products: 'Products', stock: 'Stock movements', masters: 'Master data', counts: 'Stocktakes', costs: 'Product costs', exports: 'Data export', team: 'Employees and devices', backups: 'Backups', profile: 'My account' }
 const statistics = [
   ['productCount', 'Product types'], ['quantity', 'Total stock quantity'],
   ['totalValue', 'Total stock cost (RM)'], ['negativeCount', 'Negative-stock products'],
@@ -89,6 +92,7 @@ async function signIn() {
 
 async function signOut() {
   if (busy.value || signingIn.value) return
+  if (section.value === 'stock' && !await stockPanel.value?.leave()) return
   stateRequest?.abort()
   stateRequest = null
   busy.value = true
@@ -122,6 +126,15 @@ async function markRead(row) {
   } finally { marking.value = false }
 }
 
+async function navigate(target) {
+  if (restricted.value && target !== 'backups') { navEpoch.value++; return }
+  if (section.value === 'stock' && target !== 'stock' && !await stockPanel.value?.leave()) { navEpoch.value++; return }
+  if (restricted.value && target !== 'backups') { navEpoch.value++; return }
+  section.value = target
+  error.value = ''
+  exportScope.value = null
+}
+
 async function checkState() {
   if (!dashboard.value || stateRequest) return
   const controller = new AbortController()
@@ -148,7 +161,7 @@ onUnmounted(() => { activeRequest?.abort(); stateRequest?.abort(); clearInterval
     <aside class="warehouse-sidebar">
       <div class="warehouse-brand"><b>LEE T<span class="brand-dot"></span></b><span>WAREHOUSE</span></div>
       <p class="nav-caption">WORKSPACE</p>
-      <el-menu :default-active="section" @select="key => { section = key; error = ''; exportScope = null }">
+      <el-menu :key="navEpoch" :default-active="section" @select="navigate">
         <el-menu-item v-for="(label, key) in navigation" :key="key" :index="key" :disabled="restricted && key !== 'backups'"><span>{{ label }}</span></el-menu-item>
       </el-menu>
       <div class="sidebar-footer">Inventory · Stocktakes · People</div>
@@ -161,6 +174,7 @@ onUnmounted(() => { activeRequest?.abort(); stateRequest?.abort(); clearInterval
         <Team v-if="section === 'team'" />
         <MasterData v-if="section === 'masters'" />
         <Products v-if="section === 'products'" />
+        <Stock v-if="section === 'stock'" ref="stockPanel" />
         <Counts v-if="section === 'counts'" @export="scope => { exportScope = scope; section = 'exports' }" />
         <Costs v-if="section === 'costs'" />
         <Exports v-if="section === 'exports'" :key="exportScope?.id || 'all'" :scope="exportScope" />
