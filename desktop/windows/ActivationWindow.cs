@@ -47,14 +47,16 @@ internal sealed class ActivationWindow : Window
     {
         this.bridge = bridge;
         this.files = files ?? new ActivationFiles();
+        System.Windows.Automation.AutomationProperties.SetName(Code,"Activation key");
         Title = "Activate LEE T Warehouse";
-        Width = 620; Height = 710; MinWidth = 480; MinHeight = 620;
+        Width = 620; Height = 740; MinWidth = 480; MinHeight = 620;
+        MaxHeight = Math.Max(620,SystemParameters.WorkArea.Height - 16);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F3F6FB"));
-        var body = new StackPanel { Margin = new Thickness(32), MaxWidth = 520 };
-        body.Children.Add(Text("LEE T", 30, "#1E40AF", FontWeights.Bold));
-        body.Children.Add(Text("Activate your warehouse", 24, "#0F172A", FontWeights.SemiBold));
-        body.Children.Add(Text("Activate once on this computer. Your warehouse data stays here and your licensed version can work without the internet.", 14, "#64748B"));
+        var body = new StackPanel { Margin = new Thickness(28), MaxWidth = 520 };
+        body.Children.Add(Text("LEE T", 26, "#1E40AF", FontWeights.Bold));
+        body.Children.Add(Text("Activate your warehouse", 22, "#0F172A", FontWeights.SemiBold));
+        body.Children.Add(Text("Activate once on this computer. Your warehouse data stays here and your licensed version can work without the internet.", 13, "#64748B"));
         var online = new StackPanel();
         online.Children.Add(Text("Activation key", 16, "#0F172A", FontWeights.SemiBold));
         online.Children.Add(Text("Enter the key supplied with your LEE T purchase.", 13, "#64748B"));
@@ -63,13 +65,17 @@ internal sealed class ActivationWindow : Window
         var offline = new StackPanel();
         offline.Children.Add(Text("Offline activation", 16, "#0F172A", FontWeights.SemiBold));
         offline.Children.Add(Text("Export the request and send it to your LEE T provider. Import the signed license they return.", 13, "#64748B"));
-        offline.Children.Add(Export); offline.Children.Add(Import);
+        var offlineActions = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Columns = 2 };
+        Export.Content = "1. Export request"; Import.Content = "2. Import license";
+        Export.Margin = new Thickness(0,8,5,0); Import.Margin = new Thickness(5,8,0,0);
+        offlineActions.Children.Add(Export); offlineActions.Children.Add(Import); offline.Children.Add(offlineActions);
         body.Children.Add(Card(offline));
         body.Children.Add(status);
-        body.Children.Add(Continue);
         var cancel = Button("CancelActivation", "Close");
         cancel.Click += (_, _) => Close();
-        body.Children.Add(cancel);
+        var footer = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Columns = 2 };
+        cancel.Margin = new Thickness(0,8,5,0); Continue.Margin = new Thickness(5,8,0,0);
+        footer.Children.Add(cancel); footer.Children.Add(Continue); body.Children.Add(footer);
         Content = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Code.PasswordChanged += (_, _) => UpdateControls();
         Continue.Click += (_, _) => { if (!Busy && activated) { ActivationAccepted = true; Close(); } };
@@ -148,12 +154,12 @@ internal sealed class ActivationWindow : Window
     {
         Text = value, FontSize = size, TextWrapping = TextWrapping.Wrap,
         Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)),
-        FontWeight = weight ?? FontWeights.Normal, Margin = new Thickness(0, 0, 0, 10),
+        FontWeight = weight ?? FontWeights.Normal, Margin = new Thickness(0, 0, 0, 8),
     };
     private static Border Card(UIElement content) => new()
     {
-        Child = content, Background = Brushes.White, CornerRadius = new CornerRadius(12), Padding = new Thickness(20),
-        BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E2E8F0")), BorderThickness = new Thickness(1), Margin = new Thickness(0, 8, 0, 14),
+        Child = content, Background = Brushes.White, CornerRadius = new CornerRadius(12), Padding = new Thickness(16),
+        BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E2E8F0")), BorderThickness = new Thickness(1), Margin = new Thickness(0, 6, 0, 10),
     };
     private static Button Button(string name, string text, bool primary = false) => new()
     {

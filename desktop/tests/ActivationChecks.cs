@@ -27,6 +27,9 @@ internal static class ActivationChecks
         {
             await Until(() => !ui.Busy && ui.Status.StartsWith("Ready to activate"));
             Require(!ui.Continue.IsEnabled && !ui.Online.IsEnabled, "Activation must not continue without verification.");
+            ui.UpdateLayout();
+            Require(ui.Continue.TranslatePoint(new Point(0,ui.Continue.ActualHeight),ui).Y <= ui.ActualHeight - 8,
+                "The initial activation footer is clipped on the default screen.");
             Save(ui, Path.Combine(root, "activation-ready.png"));
             Click(ui.Export); // Cancelled native file dialog must not create an installation identity.
             Require(!File.Exists(Path.Combine(root, "license", "installation-id")), "Cancelled export created an identity.");
@@ -100,6 +103,7 @@ internal static class ActivationChecks
         var pidFile = Path.Combine(root, "hanging-pid");
         var pid = int.Parse(await File.ReadAllTextAsync(pidFile));
         Require(Exited(pid), "Timed-out helper survived.");
+        Require(Exited(int.Parse(await File.ReadAllTextAsync(Path.Combine(root,"hanging-child-pid")))), "Timed-out helper descendant survived.");
         File.Delete(pidFile);
         var cancelled = new ActivationBridge(node, script, hang, TimeSpan.FromSeconds(15));
         using var cancel = new CancellationTokenSource();
@@ -108,10 +112,12 @@ internal static class ActivationChecks
         await ExpectFailure(() => cancelled.Send(Status, CancellationToken.None)); // No overlapping helper process.
         cancel.Cancel(); await ExpectFailure(() => pending);
         pid = await Pid(pidFile); Require(Exited(pid), "Cancelled helper survived.");
+        Require(Exited(int.Parse(await File.ReadAllTextAsync(Path.Combine(root,"hanging-child-pid")))), "Cancelled helper descendant survived.");
         File.Delete(pidFile);
         var closing = new ActivationWindow(new ActivationBridge(node,script,hang,TimeSpan.FromSeconds(15)),files);
         closing.Show(); pid = await Pid(pidFile); closing.Close(); await Until(() => !closing.Busy);
         Require(Exited(pid) && !closing.ActivationAccepted,"Closing the activation window left a helper or accepted setup.");
+        Require(Exited(int.Parse(await File.ReadAllTextAsync(Path.Combine(root,"hanging-child-pid")))), "Window close left a helper descendant.");
         var falseSuccess = new ActivationWindow(new FalseSuccess()); falseSuccess.Show();
         try
         {
