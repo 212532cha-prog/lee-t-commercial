@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - 'desktop/**'
+      - 'src/**'
+      - 'migrations/**'
+      - 'scripts/start-*.mjs'
+      - 'scripts/test-native-runtime.mjs'
       - 'integrations/ruoyi-vue3/**'
       - 'scripts/verify-ruoyi-bundle.mjs'
       - 'installer/windows/**'
@@ -13,6 +17,10 @@ on:
   pull_request:
     paths:
       - 'desktop/**'
+      - 'src/**'
+      - 'migrations/**'
+      - 'scripts/start-*.mjs'
+      - 'scripts/test-native-runtime.mjs'
       - 'integrations/ruoyi-vue3/**'
       - 'scripts/verify-ruoyi-bundle.mjs'
       - 'installer/windows/**'
