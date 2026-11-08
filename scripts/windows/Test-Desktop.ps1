@@ -7,6 +7,7 @@ $temporary=Join-Path ([IO.Path]::GetTempPath()) ('leet-desktop-test-'+[guid]::Ne
 $certificate=$null
 $fixture=$null
 $test=$null
+$activationEntry=$null
 $cluster=$null
 $clusterStarted=$false
 $fixtureKeys=@('PGHOST','PGPORT','PGUSER','PGPASSWORD','PGDATABASE','WAREHOUSE_NATIVE_PG','LEET_DESKTOP_TEST_RUOYI_DIR','LEET_DESKTOP_TEST_ROOT','LEET_DESKTOP_TEST_CERT','LEET_DESKTOP_TEST_PASSWORD','LEET_DESKTOP_MANAGEMENT','LEET_ACTIVATION_TEST_ROOT','LEET_ACTIVATION_TEST_SOURCE','LEET_ACTIVATION_TEST_NODE')
@@ -19,7 +20,7 @@ try {
  $activationRoot=Join-Path $temporary 'activation-ui'
  $activationPayload=Join-Path $activationRoot 'payload'
  foreach($folder in @('desktop','runtime','app\scripts')){New-Item -ItemType Directory -Path (Join-Path $activationPayload $folder) -Force | Out-Null}
- Copy-Item -LiteralPath (Join-Path $ActivationPayloadDirectory 'desktop\LeeT.Warehouse.exe') -Destination (Join-Path $activationPayload 'desktop\LeeT.Warehouse.exe')
+ Get-ChildItem -LiteralPath (Join-Path $ActivationPayloadDirectory 'desktop') | Copy-Item -Destination (Join-Path $activationPayload 'desktop') -Recurse
  Copy-Item -LiteralPath (Get-Command node.exe).Source -Destination (Join-Path $activationPayload 'runtime\node.exe')
  # Copy the real bridge and its built-in-only dependencies for the fixed installed-path check.
  Copy-Item -LiteralPath (Join-Path $root 'scripts\desktop-activation.mjs') -Destination (Join-Path $activationPayload 'app\scripts\desktop-activation.mjs')
@@ -32,6 +33,25 @@ try {
  & node (Join-Path $root 'desktop\tests\prepare-activation-fixture.mjs') $activationRoot prepare
  if($LASTEXITCODE -ne 0){throw 'Activation signing fixture failed.'}
  & (Join-Path $PSScriptRoot 'New-DesktopActivationConfig.ps1') -PayloadDirectory $activationPayload -LicenseDirectory (Join-Path $activationRoot 'license') -IssuerPublicKey (Join-Path $activationRoot 'issuer.pem') -IssuerKeyId 'desktop-ui-test' -ActivationEndpoint 'https://activation.example.test/redeem'
+ $activationExe=Join-Path $activationPayload 'desktop\LeeT.Warehouse.exe'
+ $activationEntry=Start-Process -FilePath $activationExe -ArgumentList '--activate' -PassThru
+ [void]$activationEntry.Handle
+ for($attempt=0;$attempt -lt 100;$attempt++){
+  $activationEntry.Refresh()
+  if($activationEntry.HasExited){throw 'Native activation entry exited before showing its window.'}
+  if($activationEntry.MainWindowHandle -ne [IntPtr]::Zero){break}
+  Start-Sleep -Milliseconds 100
+ }
+ if($activationEntry.MainWindowHandle -eq [IntPtr]::Zero -or -not $activationEntry.CloseMainWindow()){throw 'Native activation window did not open.'}
+ if(-not $activationEntry.WaitForExit(10000)){throw 'Closing the native activation window did not terminate setup mode.'}
+ $activationEntry.Refresh()
+ if($activationEntry.ExitCode -ne 10){throw 'Activation cancellation must return exit code 10.'}
+ $activationEntry=Start-Process -FilePath $activationExe -ArgumentList '--unexpected-argument' -PassThru
+ [void]$activationEntry.Handle
+ if(-not $activationEntry.WaitForExit(10000)){throw 'Invalid activation arguments did not terminate.'}
+ $activationEntry.Refresh()
+ if($activationEntry.ExitCode -ne 2){throw 'Unexpected activation arguments must be rejected.'}
+ Write-Output 'Actual desktop executable: native activation window/close exit 10 and invalid-argument exit 2 passed.'
  $env:LEET_ACTIVATION_TEST_ROOT=$activationRoot
  $env:LEET_ACTIVATION_TEST_SOURCE=$root
  $env:LEET_ACTIVATION_TEST_NODE=(Get-Command node.exe).Source
@@ -77,13 +97,14 @@ try {
  $test.Refresh()
  Get-Content -LiteralPath (Join-Path $temporary 'stdout.log')
  Get-Content -LiteralPath (Join-Path $temporary 'stderr.log')
- $qa=Join-Path $env:RUNNER_TEMP 'leet-activation-preview'
+ $qaRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{$env:TEMP}
+ $qa=Join-Path $qaRoot 'leet-activation-preview'
  New-Item -ItemType Directory -Path $qa -Force | Out-Null
  Get-ChildItem -LiteralPath $activationRoot -Filter '*.png' | Copy-Item -Destination $qa
  Write-Output ('Desktop process exit code: '+$test.ExitCode)
  if($null -eq $test.ExitCode -or $test.ExitCode -ne 0){throw 'Desktop window tests failed.'}
 } finally {
- foreach($process in @($test,$fixture)){if($process -and -not $process.HasExited){Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue}}
+ foreach($process in @($test,$fixture,$activationEntry)){if($process -and -not $process.HasExited){Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue}}
  if($clusterStarted -and (Test-Path -LiteralPath $cluster)){& (Join-Path $pgBin 'pg_ctl.exe') -D $cluster -m fast -w stop | Out-Null}
  foreach($key in $fixtureKeys){[Environment]::SetEnvironmentVariable($key,$previousFixtureEnvironment[$key],'Process')}
  Remove-Item Env:LEET_DESKTOP_TEST_PFX,Env:LEET_DESKTOP_TEST_PASSPHRASE -ErrorAction SilentlyContinue
