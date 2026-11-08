@@ -24,3 +24,11 @@ This remains a test installer: activation still uses a previously imported test 
 Failures contain only a stable error code; hardware/connection/signature exceptions and submitted values are never returned or logged. Stdin is limited to 16 KiB of actual UTF-8 bytes, decoded strictly. Unknown actions and fields are refused, including attempts to supply configuration or file paths. Invalid imports and failed online requests preserve the existing license. Missing or invalid local licensing returns activation-required; it never unlocks the warehouse.
 
 `node --test tests/commercial-desktop-activation.test.mjs` covers offline activation, altered/wrong-device refusal with byte-for-byte license preservation, online signing, operation overlap, stable installation identity, input bounds, hostile fields and the actual child process's output/exit behavior. This protocol is not yet connected to the native window or the installer. Production cloud signing configuration remains a separate acceptance gate.
+
+## Installation permissions
+
+The ordinary Windows app needs Users read/execute access to the installed program directory. Program modification stays restricted to administrators/SYSTEM; the warehouse service receives read/execute access. Private data, TLS and activation directories retain separate protected ACLs without a Users grant. The permission helper replaces existing explicit grants as well as removing inherited grants, so an old broad folder grant cannot survive protection.
+
+`scripts/windows/Test-DirectoryPermissions.ps1` uses a disposable local standard account and an actual impersonated Windows token to check read/execute access, refuse program writes/injection and private configuration/license access, and confirm files remain unchanged. It also starts from existing explicit Users full-control grants. The account and files are removed in `finally`; production accounts and folders are never used by this test.
+
+The private activation bridge belongs to an elevated setup/repair context that can read protected configuration and update licensing. The ordinary working app must not be elevated or receive database credentials just to open the warehouse workspace. Activation UI integration must preserve that boundary.
