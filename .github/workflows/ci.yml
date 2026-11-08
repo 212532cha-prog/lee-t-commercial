@@ -97,6 +97,8 @@ jobs:
 
       - name: Install runtime test dependencies
         run: npm ci --ignore-scripts
+      - name: Native Windows desktop activation protocol and protected license writes
+        run: node --test tests/commercial-desktop-activation.test.mjs
       - name: Windows native PostgreSQL application start and restart
         shell: powershell
         run: ./scripts/windows/Test-NativeRuntime.ps1
