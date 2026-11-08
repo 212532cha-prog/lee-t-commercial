@@ -1,10 +1,11 @@
 export function createStockRoutes({stock,cleanup}){
  return async({req,res,path,search,raw,csrf,json,body})=>{
   const clean=path.match(/^\/api\/products\/([^/]+)\/history-cleanup$/);
+  if(path==='/api/stock/preflight'&&req.method==='POST'){json(res,200,await stock.preflight(raw,csrf,await body(req,131072)));return true;}
   if(clean&&req.method==='POST'&&cleanup){json(res,200,await cleanup.clean(raw,csrf,clean[1],await body(req,131072)));return true;}
   const overwrite=path.match(/^\/api\/products\/([^/]+)\/quantity$/);
   if(overwrite&&req.method==='PUT'){json(res,200,await stock.overwriteQuantity(raw,csrf,overwrite[1],await body(req,131072)));return true;}
-  if(path==='/api/stock/transactions'&&req.method==='POST'){json(res,200,await stock.commit(raw,csrf,await body(req,131072)));return true;}
+  if(path==='/api/stock/transactions'&&req.method==='POST'){json(res,200,await stock.commit(raw,csrf,await body(req,262144)));return true;}
   const status=path.match(/^\/api\/stock\/requests\/([^/]+)$/);
   if(status&&req.method==='GET'){json(res,200,await stock.status(raw,status[1]));return true;}
   if(path==='/api/stock/draft'){

@@ -13,6 +13,8 @@ on:
       - 'scripts/test-ruoyi-profile.mjs'
       - 'scripts/test-ruoyi-backups.mjs'
       - 'scripts/test-ruoyi-product-assets.mjs'
+      - 'scripts/test-ruoyi-stock.mjs'
+      - 'public/app/stock.js'
       - 'src/auth/**'
       - 'src/catalog/**'
       - 'src/stock/**'
@@ -38,6 +40,8 @@ on:
       - 'scripts/test-ruoyi-profile.mjs'
       - 'scripts/test-ruoyi-backups.mjs'
       - 'scripts/test-ruoyi-product-assets.mjs'
+      - 'scripts/test-ruoyi-stock.mjs'
+      - 'public/app/stock.js'
       - 'src/auth/**'
       - 'src/catalog/**'
       - 'src/stock/**'
@@ -110,6 +114,8 @@ jobs:
         run: node scripts/test-ruoyi-backups.mjs "${{ runner.temp }}/ruoyi-admin"
       - name: Verify product photos, QR printing and Excel preview imports
         run: node scripts/test-ruoyi-product-assets.mjs "${{ runner.temp }}/ruoyi-admin"
+      - name: Verify scans, drafts, negative-stock confirmations and recovery
+        run: node scripts/test-ruoyi-stock.mjs "${{ runner.temp }}/ruoyi-admin"
       - uses: actions/upload-artifact@v4
         with:
           name: LEE-T-RuoYi-management-candidate

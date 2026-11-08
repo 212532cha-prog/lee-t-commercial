@@ -123,11 +123,14 @@ export class CatalogService{
   return {...this.project(row,admin),qrToken:row.qr_token,suppliers:suppliers.map(s=>({id:s.supplier_id,name:s.name||s.supplier_name_snapshot,deleted:s.supplier_id===null,isDefault:s.is_default}))};
  }
  project(row,admin){return {id:row.id,productCode:row.product_code,name:row.name,categoryId:row.category_id,categoryName:row.category_name||row.category_name_snapshot,categoryDeleted:row.category_id===null,locationId:row.location_id,locationName:row.location_name,minimumStock:Number(row.minimum_stock),quantity:Number(row.quantity),inventoryVersion:String(row.version),detailsVersion:String(row.details_version),hasPhoto:!!row.photo_key,...(admin?{individualCost:row.individual_cost}:{} )};}
- async list({categoryId,locationId,cursor,limit=20}={},role={}){
+ async list({categoryId,locationId,cursor,limit=20,q}={},role={}){
   limit=Number(limit);if(!Number.isInteger(limit)||limit<1||limit>100)throw new AuthError('INVALID_LIMIT');
   const filters=[categoryId||null,locationId||null];filters.forEach(v=>{if(v)identifier(v);});
+  if(q!==undefined&&(typeof q!=='string'||q.length>128))throw new AuthError('INVALID_SEARCH');
+  const query=q?.trim();if(query)filters.push(query);
   const values=[],where=[];const bind=v=>{values.push(v);return '$'+values.length;};
   if(categoryId)where.push(`p.category_id=${bind(categoryId)}`);if(locationId)where.push(`p.location_id=${bind(locationId)}`);
+  if(query){const pattern=bind('%'+query.replace(/[\\%_]/g,'\\$&')+'%');where.push(`(p.name ILIKE ${pattern} OR p.product_code ILIKE ${pattern})`);}
   if(cursor){let parsed;try{if(typeof cursor!=='string'||cursor.length>2048)throw Error();parsed=JSON.parse(Buffer.from(cursor,'base64url').toString());if(JSON.stringify(parsed.filters)!==JSON.stringify(filters)||typeof parsed.name!=='string'||parsed.name.length>256||!/^\d{1,19}$/.test(parsed.order)||BigInt(parsed.order)>9223372036854775807n||BigInt(parsed.order)<1n)throw Error();}catch{throw new AuthError('INVALID_CURSOR');}where.push(`(lower(p.name) COLLATE "C",p.sort_order)>(${bind(parsed.name)} COLLATE "C",${bind(parsed.order)}::bigint)`);}
   const rows=(await this.pool.query(`SELECT p.*,b.quantity,b.version,c.name AS category_name,l.name AS location_name,lower(p.name) AS name_key FROM products p JOIN inventory_balances b ON b.product_id=p.id LEFT JOIN categories c ON c.id=p.category_id JOIN warehouse_locations l ON l.id=p.location_id ${where.length?'WHERE '+where.join(' AND '):''} ORDER BY lower(p.name) COLLATE "C",p.sort_order LIMIT ${bind(limit+1)}`,values)).rows;
   const more=rows.length>limit,items=rows.slice(0,limit),last=items.at(-1);
