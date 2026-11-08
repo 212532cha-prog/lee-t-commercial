@@ -21,9 +21,12 @@ $root=[IO.Path]::GetFullPath($DataRoot)
 $installer=Join-Path $app 'scripts\windows\Install-Warehouse.ps1'
 $node=Join-Path $runtime 'node.exe'
 $postgres=Join-Path $runtime 'postgresql'
+$management=Join-Path $app 'management'
 foreach($file in @($installer,$node,(Join-Path $postgres 'bin\postgres.exe'),(Join-Path $app 'node_modules\pg\package.json'))){
  if(-not (Test-Path -LiteralPath $file -PathType Leaf)){throw 'The staged commercial payload is incomplete.'}
 }
+& $node (Join-Path $app 'scripts\verify-ruoyi-bundle.mjs') verify $management
+if($LASTEXITCODE -ne 0){throw 'The bundled LEE T management files are incomplete. Download the complete installer again.'}
 $confirmedProfile=$null
 if(-not $Address){
  . (Join-Path $PSScriptRoot 'Select-WarehouseNetwork.ps1')
@@ -59,7 +62,7 @@ if(-not $Address){
 try{
 & $installer -Commercial -OfflineDependencies -AppRoot $app -BundledNodePath $node `
  -BundledPostgresDirectory $postgres -DatabaseClusterRoot (Join-Path $root 'postgresql') `
- -DataDir (Join-Path $root 'data') -GuiSetup:$GuiSetup -Address $Address -HttpsHostname $HttpsHostname -HttpsPfxPath $HttpsPfxPath `
+ -DataDir (Join-Path $root 'data') -RuoyiAdminDirectory $management -GuiSetup:$GuiSetup -Address $Address -HttpsHostname $HttpsHostname -HttpsPfxPath $HttpsPfxPath `
  -LicenseDir (Resolve-Path -LiteralPath $LicenseDirectory).Path `
  -IssuerPublicKeyPath (Resolve-Path -LiteralPath $IssuerPublicKey).Path -IssuerKeyId $IssuerKeyId
 }catch{

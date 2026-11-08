@@ -15,7 +15,7 @@ const server = createServer({
   } else if (req.url === '/session') {
     if (req.method === 'POST') res.setHeader('Set-Cookie', '__Host-smoke=valid; Secure; HttpOnly; SameSite=Strict; Path=/');
     res.end(req.method === 'POST' || req.headers.cookie?.includes('__Host-smoke=valid') ? 'signed-in' : 'signed-out');
-  } else if (req.url === '/') {
+  } else if (req.url === '/admin/') {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end('<!doctype html><title>LEE T desktop fixture</title><h1>LEE T</h1>');
   } else {

@@ -21,7 +21,11 @@ cp -R "$integration_dir/src/views/leet" "$source_dir/src/views/"
 cd "$source_dir"
 npm install --ignore-scripts --no-audit --no-fund --save-exact jsqr@1.4.0
 npm run build:prod -- --base /admin/
+# The custom entry does not use the upstream project favicon.
+rm -f dist/favicon.ico
 cp LICENSE dist/RuoYi-LICENSE.txt
 cp node_modules/jsqr/LICENSE dist/jsQR-LICENSE.txt
 mkdir -- "$output"
 cp -R dist/. "$output/"
+
+node "$integration_dir/../../scripts/verify-ruoyi-bundle.mjs" seal "$output"

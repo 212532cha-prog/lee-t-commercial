@@ -115,8 +115,16 @@ try {
   assert.equal(saved.length,1);
   await history.getByRole('button',{name:'Close stock history',exact:true}).click();
   await details.getByRole('button',{name:'Stock history',exact:true}).click();
+  await history.getByRole('button',{name:'Verify cleanup result',exact:true}).waitFor();
+  // Confirmed cleanup and its refreshed rows are separate responses. Exercise a slow refresh
+  // and keep the exact row assertion after that response has rendered.
+  await page.route(url=>url.pathname==='/api/products/'+product.id+'/history',async route=>{
+    const response=await route.fetch();await new Promise(resolve=>setTimeout(resolve,250));await route.fulfill({response});
+  },{times:1});
+  const refreshed=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/products/'+product.id+'/history'&&response.request().method()==='GET');
   await history.getByRole('button',{name:'Verify cleanup result',exact:true}).click();
   await history.getByText('1 records deleted after a verified backup.',{exact:false}).waitFor();
+  await refreshed;await history.getByRole('checkbox').waitFor({state:'visible'});
   assert.equal(await history.getByRole('checkbox').count(),1);
   assert.equal(await page.evaluate(()=>sessionStorage.getItem(Object.keys(sessionStorage).find(key=>key.endsWith(':cleanup')))),null);
   assert.equal((await cleanup.status(actor.token,product.id,pending.requestId)).deleted,1);

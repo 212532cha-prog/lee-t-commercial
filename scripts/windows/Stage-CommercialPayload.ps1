@@ -4,6 +4,7 @@ param(
  [Parameter(Mandatory=$true)][string]$PostgresDirectory,
  [Parameter(Mandatory=$true)][string]$DesktopDirectory,
  [Parameter(Mandatory=$true)][string]$WebView2Installer,
+ [Parameter(Mandatory=$true)][string]$ManagementDirectory,
  [Parameter(Mandatory=$true)][string]$OutputDirectory
 )
 $ErrorActionPreference='Stop'
@@ -12,6 +13,7 @@ $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $nodeRoot=(Resolve-Path -LiteralPath $NodeDirectory).Path
 $postgres=(Resolve-Path -LiteralPath $PostgresDirectory).Path
 $desktop=(Resolve-Path -LiteralPath $DesktopDirectory).Path
+$management=(Resolve-Path -LiteralPath $ManagementDirectory).Path
 $webView=(Resolve-Path -LiteralPath $WebView2Installer).Path
 if(-not (Test-Path -LiteralPath (Join-Path $desktop 'LeeT.Warehouse.exe') -PathType Leaf)){throw 'Build the Windows desktop client first.'}
 $signature=Get-AuthenticodeSignature -LiteralPath $webView
@@ -28,6 +30,8 @@ foreach($path in @($node,$npm,$server,(Join-Path $postgres 'bin\initdb.exe'),(Jo
 }
 $nodeVersion=& $node -p "process.platform+':'+process.arch+':'+process.versions.node"
 if($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^win32:x64:24\.'){throw 'The installer payload requires Windows x64 Node.js 24.'}
+& $node (Join-Path $root 'scripts\verify-ruoyi-bundle.mjs') verify $management
+if($LASTEXITCODE -ne 0){throw 'The management bundle failed validation.'}
 $pgVersion=& $server --version
 if($LASTEXITCODE -ne 0 -or $pgVersion -notmatch '^postgres \(PostgreSQL\) 17\.'){throw 'The installer payload requires PostgreSQL 17.'}
 $pgDirectories=@('bin','lib','share')
@@ -46,6 +50,9 @@ try{
  $prefix=$app.Replace('\','/')+'/'
  & git -C $root checkout-index --all "--prefix=$prefix"
  if($LASTEXITCODE -ne 0){throw 'Cannot export tracked source.'}
+ Copy-Item -LiteralPath $management -Destination (Join-Path $app 'management') -Recurse
+ & $node (Join-Path $app 'scripts\verify-ruoyi-bundle.mjs') verify (Join-Path $app 'management')
+ if($LASTEXITCODE -ne 0){throw 'The staged management bundle failed validation.'}
  Copy-Item -LiteralPath $desktop -Destination (Join-Path $temporary 'desktop') -Recurse
  Copy-Item -LiteralPath $webView -Destination (Join-Path $runtime 'WebView2RuntimeInstaller.exe')
  Copy-Item -LiteralPath $node -Destination (Join-Path $runtime 'node.exe')

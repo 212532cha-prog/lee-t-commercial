@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Windows;
+using System.Text.Json;
 using System.Windows.Controls;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -24,10 +25,14 @@ internal static class Smoke
                 ready.EnsureSuccessStatusCode();
                 retry.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 await Until(() => browser.Visibility == Visibility.Visible);
-                Require(await browser.ExecuteScriptAsync("document.title") == "\"LEE T desktop fixture\"", "Warehouse page did not render.");
+                Require(new Uri(browser.CoreWebView2.Source).AbsolutePath == "/admin/", "Desktop must open the bundled management workspace.");
                 Require(!browser.CoreWebView2.Settings.AreHostObjectsAllowed, "Host objects must be disabled.");
                 Require(!browser.CoreWebView2.Settings.IsWebMessageEnabled, "Host messages must be disabled.");
                 Require(!browser.CoreWebView2.Settings.AreDevToolsEnabled, "Developer tools must be disabled.");
+                var management = Environment.GetEnvironmentVariable("LEET_DESKTOP_MANAGEMENT") == "1";
+                if (management) await CheckManagement(browser);
+                else {
+                Require(await browser.ExecuteScriptAsync("document.title") == "\"LEE T desktop fixture\"", "Warehouse page did not render.");
                 await browser.ExecuteScriptAsync("fetch('/session', {method:'POST'}).then(r=>r.text()).then(value=>document.body.dataset.session=value)");
                 await Until(async () => await browser.ExecuteScriptAsync("document.body.dataset.session") == "\"signed-in\"");
                 var reload = new TaskCompletionSource<bool>();
@@ -36,6 +41,7 @@ internal static class Smoke
                 Require(await reload.Task.WaitAsync(TimeSpan.FromSeconds(15)), "Warehouse reload failed.");
                 await browser.ExecuteScriptAsync("fetch('/session').then(r=>r.text()).then(value=>document.body.dataset.session=value)");
                 await Until(async () => await browser.ExecuteScriptAsync("document.body.dataset.session") == "\"signed-in\"");
+                }
                 var navigation = new TaskCompletionSource<bool>();
                 browser.CoreWebView2.NavigationStarting += (_, args) =>
                 {
@@ -57,6 +63,35 @@ internal static class Smoke
             }
         };
         return application.Run(window);
+    }
+
+    private static async Task CheckManagement(WebView2 browser)
+    {
+        Require(await browser.ExecuteScriptAsync("document.title") == "\"LEE T Administration\"", "Built management entry did not render.");
+        await Until(async () => await browser.ExecuteScriptAsync("!!document.querySelector('.sign-in-form')") == "true");
+        await browser.ExecuteScriptAsync("(()=>{globalThis.__desktopFailures=[];globalThis.__desktopPending=0;const original=globalThis.fetch;globalThis.fetch=(...args)=>{globalThis.__desktopPending++;return original(...args).then(response=>{if(!response.ok)globalThis.__desktopFailures.push(new URL(response.url).pathname+':'+response.status);return response}).finally(()=>globalThis.__desktopPending--)};globalThis.addEventListener('error',event=>globalThis.__desktopFailures.push('script:'+event.message));globalThis.addEventListener('unhandledrejection',()=>globalThis.__desktopFailures.push('unhandled rejection'))})()");
+        var password = JsonSerializer.Serialize(Environment.GetEnvironmentVariable("LEET_DESKTOP_TEST_PASSWORD") ?? throw new InvalidOperationException("Missing fixture password."));
+        await browser.ExecuteScriptAsync("(()=>{const form=document.querySelector('.sign-in-form');const set=(selector,value)=>{const input=form.querySelector(selector);input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}))};set('input[type=text]','CTL LEE');set('input[type=password]'," + password + ");form.requestSubmit()})()");
+        await Until(async () => await browser.ExecuteScriptAsync("!!document.querySelector('.warehouse-shell') && document.body.textContent.includes('Warehouse overview')") == "true");
+        Require(await browser.ExecuteScriptAsync("document.body.textContent.includes('Administrator')") == "true", "Administrator display name missing.");
+        foreach (var section in new[] { "Products", "Master data", "Stocktakes", "Product costs", "Data export", "Employees and devices", "Backups", "My account", "Stock movements" })
+        {
+            var label = JsonSerializer.Serialize(section);
+            await browser.ExecuteScriptAsync("[...document.querySelectorAll('.el-menu-item')].find(element=>element.textContent.trim()===" + label + ").click()");
+            await Until(async () => await browser.ExecuteScriptAsync("document.querySelector('.warehouse-topbar')?.textContent.includes(" + label + ")") == "true");
+            await Until(async () => await browser.ExecuteScriptAsync("globalThis.__desktopPending === 0") == "true");
+            if (section == "Products") await Until(async () => await browser.ExecuteScriptAsync("document.body.textContent.includes('Desktop test bolt')") == "true");
+            await Until(async () => await browser.ExecuteScriptAsync("!document.querySelector('.el-loading-mask') || [...document.querySelectorAll('.el-loading-mask')].every(element=>element.getClientRects().length===0)") == "true");
+        }
+        Require(await browser.ExecuteScriptAsync("globalThis.__desktopFailures.length") == "0", "A management module failed a real warehouse request or script.");
+        await browser.ExecuteScriptAsync("fetch('/api/me').then(r=>r.json()).then(value=>document.body.dataset.checkedRole=value.user.role)");
+        await Until(async () => await browser.ExecuteScriptAsync("document.body.dataset.checkedRole") == "\"admin\"");
+        var reloaded = new TaskCompletionSource<bool>();
+        browser.CoreWebView2.NavigationCompleted += (_, result) => reloaded.TrySetResult(result.IsSuccess);
+        browser.Reload();Require(await reloaded.Task.WaitAsync(TimeSpan.FromSeconds(15)), "Management reload failed.");
+        await Until(async () => await browser.ExecuteScriptAsync("!!document.querySelector('.warehouse-shell') && document.body.textContent.includes('Warehouse overview')") == "true");
+        Require(await browser.ExecuteScriptAsync("!!document.querySelector('.sign-in-form')") == "false", "Reload lost the real warehouse session.");
+        Console.WriteLine("Real built management in WebView2: PostgreSQL login, nine module entries, Administrator branding and session reload passed.");
     }
 
     private static void Require(bool condition, string message)

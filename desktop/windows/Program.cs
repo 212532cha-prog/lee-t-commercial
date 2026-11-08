@@ -92,7 +92,7 @@ internal static class Program
                     };
                     initialized = true;
                 }
-                browser.CoreWebView2.Navigate(Warehouse.AbsoluteUri);
+                browser.CoreWebView2.Navigate(new Uri(Warehouse, "/admin/").AbsoluteUri);
             }
             catch (OperationCanceledException) when (closing.IsCancellationRequested) { }
             catch (WebView2RuntimeNotFoundException)

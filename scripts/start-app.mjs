@@ -1,3 +1,4 @@
+import {verifyRuoyiBundle} from './verify-ruoyi-bundle.mjs';
 import {resolve} from 'node:path';
 import {createSecureContext} from 'node:tls';
 import {createPool,migrate} from '../src/db/database.mjs';
@@ -24,6 +25,7 @@ import {maintainWarehouseAdvertisement,discoveryConfig} from '../src/commercial/
 let pool,lease;
 try{
  const settings=await loadSettings();
+ if(settings.LEE_T_RUOYI_ADMIN_DIR)await verifyRuoyiBundle(settings.LEE_T_RUOYI_ADMIN_DIR);
  let pairing;
  if(process.argv.includes('--commercial')){
   let license;

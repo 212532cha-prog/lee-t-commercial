@@ -1,6 +1,6 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
-param([string]$AppRoot=([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))),[string]$DataDir,[string]$BackupPath1,[string]$BackupPath2,[string]$Address,[int]$Port=3443,[string]$PostgresService,[switch]$NoStart,[string]$BundledNodePath,[switch]$OfflineDependencies,[switch]$Commercial,[string]$LicenseDir,[string]$IssuerPublicKeyPath,[string]$IssuerKeyId,[string]$BundledPostgresDirectory,[string]$DatabaseClusterRoot,[string]$HttpsHostname,[string]$HttpsPfxPath,[switch]$GuiSetup)
+param([string]$AppRoot=([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))),[string]$DataDir,[string]$BackupPath1,[string]$BackupPath2,[string]$Address,[int]$Port=3443,[string]$PostgresService,[switch]$NoStart,[string]$BundledNodePath,[switch]$OfflineDependencies,[switch]$Commercial,[string]$LicenseDir,[string]$IssuerPublicKeyPath,[string]$IssuerKeyId,[string]$BundledPostgresDirectory,[string]$DatabaseClusterRoot,[string]$HttpsHostname,[string]$HttpsPfxPath,[switch]$GuiSetup,[string]$RuoyiAdminDirectory)
 $ErrorActionPreference='Stop'
 function Read-PlainSecret([string]$Prompt) { $secure=Read-Host $Prompt -AsSecureString;$pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure);try{return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)}finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)} }
 function Protect-Directory([string]$Path,[string]$ServiceAccess) { New-Item -ItemType Directory -Path $Path -Force | Out-Null;& icacls.exe $Path '/inheritance:r' '/grant:r' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' ('*S-1-5-19:(OI)(CI)'+$ServiceAccess) '/C' | Out-Null;if($LASTEXITCODE -ne 0){throw 'Cannot apply required NTFS permissions.'} }
@@ -40,6 +40,12 @@ if($BundledNodePath){
  if(-not [IO.Path]::IsPathRooted($BundledNodePath) -or -not (Test-Path -LiteralPath $BundledNodePath -PathType Leaf)){throw 'Bundled Node executable was not found.'}
  $node=[IO.Path]::GetFullPath($BundledNodePath)
 }else{$node=(Get-Command node.exe).Source}
+if($RuoyiAdminDirectory){
+ if(-not [IO.Path]::IsPathRooted($RuoyiAdminDirectory)){throw 'Use an absolute management directory.'}
+ & $node (Join-Path $AppRoot 'scripts\verify-ruoyi-bundle.mjs') verify $RuoyiAdminDirectory
+ if($LASTEXITCODE -ne 0){throw 'The LEE T management bundle failed validation.'}
+ $RuoyiAdminDirectory=[IO.Path]::GetFullPath($RuoyiAdminDirectory)
+}
 if($OfflineDependencies -and -not (Test-Path -LiteralPath (Join-Path $AppRoot 'node_modules\pg\package.json') -PathType Leaf)){throw 'Bundled production dependencies were not found.'}
 if($Commercial){
  foreach($path in @($LicenseDir,$IssuerPublicKeyPath)){if(-not $path -or -not [IO.Path]::IsPathRooted($path)){throw 'Absolute license and issuer key paths are required.'}}
@@ -98,6 +104,7 @@ if($HttpsHostname){
  $origin='https://'+$Address+':'+$Port
 }
 $config=@{ServiceName=$serviceName;AppRoot=$AppRoot;NodePath=$node;Environment=@{DATABASE_URL=$databaseUrl;PUBLIC_ORIGIN=$origin;DATA_DIR=$DataDir;APP_PORT=[string]$Port;APP_BIND='0.0.0.0';TLS_PFX_PATH=$certificate.PfxPath;TLS_PFX_PASSPHRASE=$certificate.Passphrase}}
+if($RuoyiAdminDirectory){$config.Environment.LEE_T_RUOYI_ADMIN_DIR=$RuoyiAdminDirectory}
 if($Commercial){
  if($certificate.LeafCertificate){
   $config.Environment.LEE_T_PAIRING_CERT_PATH=$certificate.LeafCertificate
@@ -140,7 +147,8 @@ if($Commercial -and $certificate.LeafCertificate){
 if(-not $NoStart){Start-Service $serviceName}
 Write-Output ('Installed service. LAN address: '+$origin)
 if($Commercial -and $certificate.LeafCertificate){Write-Output ('Administrator on this PC: https://localhost:'+$Port)}
-if($certificate.RootCertificate){Write-Output ('Install and trust this test root certificate on each phone: '+$certificate.RootCertificate)}
+if($Commercial){Write-Output 'Employees: open LEE T Mobile on the warehouse Wi-Fi and scan the pairing code. The native app verifies the warehouse identity.'}
+elseif($certificate.RootCertificate){Write-Output ('Browser-only test certificate: '+$certificate.RootCertificate)}
 Write-Output 'Phone/HID, actual shutdown/reboot, external storage and new-computer restore still require the acceptance checklist. Do not open router/public ports.'
 
 }catch{

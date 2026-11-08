@@ -4,13 +4,25 @@ on:
   push:
     branches: [main]
     paths:
-      - 'desktop/windows/**'
+      - 'desktop/**'
+      - 'src/**'
+      - 'migrations/**'
+      - 'scripts/start-*.mjs'
+      - 'scripts/test-native-runtime.mjs'
+      - 'integrations/ruoyi-vue3/**'
+      - 'scripts/verify-ruoyi-bundle.mjs'
       - 'installer/windows/**'
       - 'scripts/windows/**'
       - '.github/workflows/windows-commercial-test-setup.yml'
   pull_request:
     paths:
-      - 'desktop/windows/**'
+      - 'desktop/**'
+      - 'src/**'
+      - 'migrations/**'
+      - 'scripts/start-*.mjs'
+      - 'scripts/test-native-runtime.mjs'
+      - 'integrations/ruoyi-vue3/**'
+      - 'scripts/verify-ruoyi-bundle.mjs'
       - 'installer/windows/**'
       - 'scripts/windows/**'
       - '.github/workflows/windows-commercial-test-setup.yml'
@@ -20,7 +32,21 @@ permissions:
   contents: read
 
 jobs:
+  management-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: bash integrations/ruoyi-vue3/build.sh "${{ runner.temp }}/ruoyi-admin"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LEE-T-bundled-management
+          path: ${{ runner.temp }}/ruoyi-admin
+          if-no-files-found: error
   setup:
+    needs: management-bundle
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
@@ -31,6 +57,12 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: LEE-T-bundled-management
+          path: ${{ runner.temp }}/ruoyi-admin
+      - name: Install desktop integration test dependencies
+        run: npm ci --ignore-scripts
       - name: Publish self-contained desktop client
         shell: powershell
         run: |
@@ -45,7 +77,7 @@ jobs:
         run: |
           $nodeDirectory = Split-Path (Get-Command node.exe).Source
           $postgresDirectory = Join-Path $env:ProgramFiles 'PostgreSQL\17'
-          ./scripts/windows/Stage-CommercialPayload.ps1 -NodeDirectory $nodeDirectory -PostgresDirectory $postgresDirectory -DesktopDirectory (Join-Path $env:RUNNER_TEMP 'leet-desktop') -WebView2Installer (Join-Path $env:RUNNER_TEMP 'WebView2RuntimeInstaller.exe') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'leet-payload')
+          ./scripts/windows/Stage-CommercialPayload.ps1 -NodeDirectory $nodeDirectory -PostgresDirectory $postgresDirectory -DesktopDirectory (Join-Path $env:RUNNER_TEMP 'leet-desktop') -WebView2Installer (Join-Path $env:RUNNER_TEMP 'WebView2RuntimeInstaller.exe') -ManagementDirectory (Join-Path $env:RUNNER_TEMP 'ruoyi-admin') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'leet-payload')
       - name: Verify staged desktop runtime
         shell: powershell
         run: |
@@ -69,6 +101,12 @@ jobs:
           dotnet publish desktop/tests/LeeT.Desktop.Smoke.csproj -c Release -r win-x64 --self-contained true -o $tests
           if ($LASTEXITCODE -ne 0) { throw 'Desktop test build failed.' }
           ./scripts/windows/Test-Desktop.ps1 -DesktopTestExecutable (Join-Path $tests 'LeeT.Desktop.Smoke.exe')
+      - name: Verify real built management in the Windows app with PostgreSQL
+        shell: powershell
+        run: |
+          $tests = Join-Path $env:RUNNER_TEMP 'leet-desktop-tests'
+          $management = Join-Path $env:RUNNER_TEMP 'leet-payload\app\management'
+          ./scripts/windows/Test-Desktop.ps1 -DesktopTestExecutable (Join-Path $tests 'LeeT.Desktop.Smoke.exe') -ManagementDirectory $management
       - name: Build Windows test setup
         shell: powershell
         run: |
