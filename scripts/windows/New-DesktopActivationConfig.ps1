@@ -22,16 +22,41 @@ $desktop=Join-Path $payload 'desktop'
 $config=Join-Path $desktop 'activation.private.json'
 $trust=Join-Path $payload 'publisher'
 $publicKey=Join-Path $trust 'issuer-public.pem'
-if((Test-Path -LiteralPath $config) -or (Test-Path -LiteralPath $publicKey)){throw 'Activation setup already exists. Preserve it for the repair workflow.'}
+if((Test-Path -LiteralPath $config) -or (Test-Path -LiteralPath $publicKey) -or (Test-Path -LiteralPath (Join-Path $payload 'app\activation'))){throw 'Activation setup already exists. Preserve it for the repair workflow.'}
 foreach($path in @((Join-Path $payload 'runtime\node.exe'),(Join-Path $payload 'app\scripts\desktop-activation.mjs'),(Join-Path $desktop 'LeeT.Warehouse.exe'))){
  if(-not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'The complete desktop payload is required.'}
 }
-# Setup owns this operation. The ordinary app can execute binaries, but cannot alter issuer trust/configuration.
-foreach($path in @($desktop,(Join-Path $payload 'runtime'),(Join-Path $payload 'app'),$trust)){
- Protect-Directory $path 'RX' -AllowDesktopRead
+# Protect copied files as well as their containers: a file may retain explicit grants from its source.
+$administrator=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+function Set-ActivationFileAccess([string]$Path,[switch]$Private){
+ $security=[Security.AccessControl.FileSecurity]::new()
+ $security.SetAccessRuleProtection($true,$false)
+ $security.SetOwner($administrator)
+ foreach($sid in @('S-1-5-32-544','S-1-5-18')){
+  $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),'FullControl','Allow'))
+ }
+ if(-not $Private){
+  foreach($sid in @('S-1-5-19','S-1-5-32-545')){
+   $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),'ReadAndExecute','Allow'))
+  }
+ }
+ Set-Acl -LiteralPath $Path -AclObject $security
+}
+$programRoots=@($desktop,(Join-Path $payload 'runtime'),(Join-Path $payload 'app'),$trust)
+New-Item -ItemType Directory -Path $trust -Force | Out-Null
+$programItems=@($programRoots | ForEach-Object {Get-Item -LiteralPath $_;Get-ChildItem -LiteralPath $_ -Recurse -Force})
+if(@($programItems | Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0}).Count){throw 'Activation setup cannot use linked program files or directories.'}
+foreach($item in $programItems){
+ if($item.PSIsContainer){
+  Protect-Directory $item.FullName 'RX' -AllowDesktopRead
+  $security=Get-Acl -LiteralPath $item.FullName
+  $security.SetOwner($administrator)
+  Set-Acl -LiteralPath $item.FullName -AclObject $security
+ }else{Set-ActivationFileAccess $item.FullName}
 }
 Protect-Directory ([IO.Path]::GetFullPath($LicenseDirectory)) 'RX'
 Copy-Item -LiteralPath $IssuerPublicKey -Destination $publicKey
+Set-ActivationFileAccess $publicKey
 $environment=@{
  LEE_T_LICENSE_DIR=[IO.Path]::GetFullPath($LicenseDirectory)
  LEE_T_ISSUER_PUBLIC_KEY_PATH=$publicKey
@@ -39,12 +64,5 @@ $environment=@{
 }
 if($ActivationEndpoint){$environment.LEE_T_ACTIVATION_ENDPOINT=$ActivationEndpoint}
 [IO.File]::WriteAllText($config,(@{Environment=$environment}|ConvertTo-Json -Depth 3),[Text.UTF8Encoding]::new($false))
-$acl=[Security.AccessControl.FileSecurity]::new()
-$acl.SetAccessRuleProtection($true,$false)
-$administrator=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
-$acl.SetOwner($administrator)
-foreach($sid in @('S-1-5-32-544','S-1-5-18')){
- $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),'FullControl','Allow'))
-}
-Set-Acl -LiteralPath $config -AclObject $acl
+Set-ActivationFileAccess $config -Private
 Write-Output 'Protected LEE T desktop activation settings prepared. No warehouse database configuration was copied.'

@@ -57,7 +57,7 @@ internal sealed class ActivationBridge(string node, string script, string config
         foreach (var acl in new FileSystemSecurity[] { file.GetAccessControl(), file.Directory!.GetAccessControl() })
         {
             var trusted = new[] { "S-1-5-18", "S-1-5-32-544" };
-            if (!trusted.Contains(acl.GetOwner(typeof(SecurityIdentifier)).Value)) throw new InvalidOperationException("SETUP_REQUIRED");
+            if (acl.GetOwner(typeof(SecurityIdentifier)) is not { } owner || !trusted.Contains(owner.Value)) throw new InvalidOperationException("SETUP_REQUIRED");
             const FileSystemRights writes = FileSystemRights.Write | FileSystemRights.Delete |
                 FileSystemRights.DeleteSubdirectoriesAndFiles | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership;
             foreach (FileSystemAccessRule rule in acl.GetAccessRules(true, true, typeof(SecurityIdentifier)))
