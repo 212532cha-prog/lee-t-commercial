@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
@@ -58,7 +59,13 @@ internal static class ActivationChecks
         insecure.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier("S-1-5-32-545"), FileSystemRights.Write, AccessControlType.Allow));
         info.SetAccessControl(insecure);
         try { ExpectFailure(() => ActivationBridge.Installed(Path.GetDirectoryName(config)!)); }
-        finally { info.SetAccessControl(originalAcl); }
+        finally
+        {
+            var restored = new FileSecurity();
+            restored.SetSecurityDescriptorBinaryForm(originalAcl.GetSecurityDescriptorBinaryForm(), AccessControlSections.Access);
+            info.SetAccessControl(restored);
+        }
+        ActivationBridge.Installed(Path.GetDirectoryName(config)!);
 
         var onlineConfig = await Config(config, "online", root);
         var previous = Environment.GetEnvironmentVariable("NODE_OPTIONS");
@@ -97,14 +104,13 @@ internal static class ActivationChecks
         var cancelled = new ActivationBridge(node, script, hang, TimeSpan.FromSeconds(15));
         using var cancel = new CancellationTokenSource();
         var pending = cancelled.Send(Status, cancel.Token);
-        await Until(() => File.Exists(pidFile));
+        await Pid(pidFile);
         await ExpectFailure(() => cancelled.Send(Status, CancellationToken.None)); // No overlapping helper process.
         cancel.Cancel(); await ExpectFailure(() => pending);
-        pid = int.Parse(await File.ReadAllTextAsync(pidFile)); Require(Exited(pid), "Cancelled helper survived.");
+        pid = await Pid(pidFile); Require(Exited(pid), "Cancelled helper survived.");
         File.Delete(pidFile);
         var closing = new ActivationWindow(new ActivationBridge(node,script,hang,TimeSpan.FromSeconds(15)),files);
-        closing.Show(); await Until(() => File.Exists(pidFile));
-        pid = int.Parse(await File.ReadAllTextAsync(pidFile)); closing.Close(); await Until(() => !closing.Busy);
+        closing.Show(); pid = await Pid(pidFile); closing.Close(); await Until(() => !closing.Busy);
         Require(Exited(pid) && !closing.ActivationAccepted,"Closing the activation window left a helper or accepted setup.");
         var falseSuccess = new ActivationWindow(new FalseSuccess()); falseSuccess.Show();
         try
@@ -138,6 +144,12 @@ internal static class ActivationChecks
         Require(process.ExitCode == 0, "Offline fixture signing failed.");
     }
     private static bool Exited(int pid) { try { using var process = Process.GetProcessById(pid); return process.HasExited; } catch (ArgumentException) { return true; } }
+    private static async Task<int> Pid(string file)
+    {
+        var pid = 0;
+        await Until(() => { try { return int.TryParse(File.ReadAllText(file), out pid); } catch (IOException) { return false; } });
+        return pid;
+    }
     private static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     private static void Save(Window window, string file)
     {
