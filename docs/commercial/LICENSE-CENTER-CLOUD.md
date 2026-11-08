@@ -1,6 +1,6 @@
 # LEE T License Center — cloud readiness
 
-Checked 2026-11-08. This records deployment preparation; it does not attest to a running authorization service.
+Checked 2026-11-08. This records deployment preparation and an unconfigured Edge adapter; it does not attest to a working production signing service.
 
 ## Completed baseline
 
@@ -19,12 +19,16 @@ Checked 2026-11-08. This records deployment preparation; it does not attest to a
 | Region | Singapore, `ap-southeast-1` |
 | Plan and creation quote | Free; quoted USD 0 monthly |
 | Status at inspection | `ACTIVE_HEALTHY`, PostgreSQL 17.11 |
-| Public application tables / Edge Functions | None |
+| Public application tables / Edge Functions | No public application tables; `lee-t-activation` candidate deployed without signing configuration |
 | Signing keys / issued licenses / sales records | Not provisioned by this deployment preparation |
 
 This project is reserved for publisher customers, payments, activation, approvals and authorization audit. Customer warehouse inventory, employee records, product images, reports and backups stay on each customer's own server. The pre-existing Supabase project was not changed. Cloudflare account access was checked read-only; existing DNS and Workers were not changed, and the paid Containers plan was not enabled. Its current Containers API response requires Workers Paid, so deploying the current Node server there is not an available free path.
 
 The Free project quote covers this preparation, not a production uptime, retention or recovery guarantee. Capacity, inactivity behavior, backups and recovery must be accepted before commercial use. No paid plan change is authorized by this document.
+
+## Edge transport candidate
+
+The standalone adapter reuses the existing PostgreSQL ledger and Ed25519 signing code. Node tests cover streamed byte limits, hostile endpoint settings, interrupted responses and duplicate redemption. A separate Deno 2.9.6 process exercises the actual deployment file with a real PostgreSQL 17 database, verified TLS, wrong-CA refusal and private-schema/RLS tests. The isolated hosted candidate loads but returns 503 without a configured signing key; no issuer database rows or private keys were installed. See [the adapter deployment notes](../../integrations/license-center/README.md). This does not complete hosted activation acceptance.
 
 ## Next deployment gate
 

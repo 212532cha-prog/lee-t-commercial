@@ -1,6 +1,6 @@
 import {X509Certificate} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
-const allowed=new Set(['DATABASE_URL','PUBLIC_ORIGIN','TUNNEL_PUBLIC_ORIGIN','DATA_DIR','APP_PORT','APP_BIND','TLS_CERT_PATH','TLS_KEY_PATH','TLS_PFX_PATH','TLS_PFX_PASSPHRASE','LEE_T_LICENSE_DIR','LEE_T_ISSUER_PUBLIC_KEY_PATH','LEE_T_ISSUER_KEY_ID','LEE_T_ACTIVATION_ORIGIN','LEE_T_MDNS','LEE_T_PAIRING_CERT_PATH','LEE_T_RUOYI_ADMIN_DIR']);
+const allowed=new Set(['DATABASE_URL','PUBLIC_ORIGIN','TUNNEL_PUBLIC_ORIGIN','DATA_DIR','APP_PORT','APP_BIND','TLS_CERT_PATH','TLS_KEY_PATH','TLS_PFX_PATH','TLS_PFX_PASSPHRASE','LEE_T_LICENSE_DIR','LEE_T_ISSUER_PUBLIC_KEY_PATH','LEE_T_ISSUER_KEY_ID','LEE_T_ACTIVATION_ORIGIN','LEE_T_ACTIVATION_ENDPOINT','LEE_T_MDNS','LEE_T_PAIRING_CERT_PATH','LEE_T_RUOYI_ADMIN_DIR']);
 export async function readSettings(environment=process.env){
  const settings={...environment};
  if(environment.WAREHOUSE_CONFIG_PATH){const config=JSON.parse(await readFile(environment.WAREHOUSE_CONFIG_PATH,'utf8'));if(!config.Environment||typeof config.Environment!=='object'||Array.isArray(config.Environment))throw Error('INVALID_SERVER_CONFIGURATION');for(const [key,value]of Object.entries(config.Environment)){if(!allowed.has(key)||typeof value!=='string')throw Error('INVALID_SERVER_CONFIGURATION');if(settings[key]===undefined)settings[key]=value;}}
