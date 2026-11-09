@@ -137,3 +137,16 @@ jobs:
           name: LeeT-Test-Setup
           path: ${{ runner.temp }}/leet-setup/LeeT-Test-Setup.exe
           if-no-files-found: error
+      - name: Compile Windows setup with embedded online activation settings
+        shell: powershell
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          $output = Join-Path $env:RUNNER_TEMP 'leet-online-compile-test'
+          $payload = Join-Path $env:RUNNER_TEMP 'leet-payload'
+          $publicKey = Join-Path $env:RUNNER_TEMP 'leet-online-fixture-public.pem'
+          node --input-type=module -e 'import {generateKeyPairSync} from ''node:crypto'';import {writeFileSync} from ''node:fs'';const {publicKey}=generateKeyPairSync(''ed25519'');writeFileSync(process.argv[1],publicKey.export({type:''spki'',format:''pem''}));' -- $publicKey
+          if ($LASTEXITCODE -ne 0) { throw 'Online installer public key fixture failed.' }
+          & $compiler "/DPayloadDir=$payload" "/DBuildOutput=$output" "/DOnlineIssuerPublicKey=$publicKey" '/DOnlineIssuerKeyId=ci-online-fixture' '/DOnlineActivationEndpoint=https://activation.example.test/v1/activation/redeem' 'installer/windows/LeeT-Test-Setup.iss'
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $output 'LeeT-Test-Setup.exe') -PathType Leaf)) {
+            throw 'Windows setup with embedded activation settings failed to compile.'
+          }

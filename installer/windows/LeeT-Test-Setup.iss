@@ -4,6 +4,18 @@
 #ifndef BuildOutput
   #error Provide BuildOutput for the setup executable
 #endif
+#ifdef OnlineActivationEndpoint
+  #ifndef OnlineIssuerPublicKey
+    #error Provide OnlineIssuerPublicKey with OnlineActivationEndpoint
+  #endif
+  #ifndef OnlineIssuerKeyId
+    #error Provide OnlineIssuerKeyId with OnlineActivationEndpoint
+  #endif
+#else
+  #if defined(OnlineIssuerPublicKey) || defined(OnlineIssuerKeyId)
+    #error Provide OnlineActivationEndpoint with the online issuer settings
+  #endif
+#endif
 
 [Setup]
 AppId=LeeTCommercialWarehouseTest
@@ -22,6 +34,9 @@ Compression=lzma2
 SolidCompression=yes
 
 [Files]
+#ifdef OnlineActivationEndpoint
+Source: "{#OnlineIssuerPublicKey}"; DestDir: "{tmp}\activation"; DestName: "online-issuer-public.pem"; Flags: dontcopy
+#endif
 Source: "{#PayloadDir}\desktop\*"; DestDir: "{tmp}\activation\desktop"; Flags: dontcopy recursesubdirs
 Source: "{#PayloadDir}\runtime\node.exe"; DestDir: "{tmp}\activation\runtime"; Flags: dontcopy
 Source: "{#PayloadDir}\app\package.json"; DestDir: "{tmp}\activation\app"; Flags: dontcopy
@@ -39,7 +54,7 @@ var
   OptionsPage: TInputQueryWizardPage;
   DataPage: TInputDirWizardPage;
   ProvisionResult: Integer;
-  InstallLicenseDir, InstallIssuerKey: String;
+  InstallLicenseDir, InstallIssuerKey, InstallIssuerKeyId: String;
 
 procedure InitializeWizard;
 begin
@@ -72,7 +87,12 @@ end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
+#ifdef OnlineActivationEndpoint
+  Result := (PageID = ActivationPage.ID) or (PageID = LicensePage.ID) or
+    (PageID = KeyPage.ID) or (PageID = OptionsPage.ID);
+#else
   Result := (PageID = LicensePage.ID) and (ActivationPage.SelectedValueIndex = 0);
+#endif
 end;
 
 function PrepareNativeActivation: String;
@@ -91,13 +111,19 @@ begin
   except
     Exit;
   end;
+#ifdef OnlineActivationEndpoint
+  InstallIssuerKey := AddBackslash(Bootstrap) + 'online-issuer-public.pem';
+#endif
   PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   Script := AddBackslash(Bootstrap) + 'app\scripts\windows\New-DesktopActivationConfig.ps1';
   Arguments := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + AddQuotes(Script) +
     ' -PayloadDirectory ' + AddQuotes(Bootstrap) +
     ' -LicenseDirectory ' + AddQuotes(InstallLicenseDir) +
-    ' -IssuerPublicKey ' + AddQuotes(KeyPage.Values[0]) +
-    ' -IssuerKeyId ' + AddQuotes(Trim(OptionsPage.Values[0])) + ' -InstallerCache';
+    ' -IssuerPublicKey ' + AddQuotes(InstallIssuerKey) +
+    ' -IssuerKeyId ' + AddQuotes(InstallIssuerKeyId) + ' -InstallerCache';
+#ifdef OnlineActivationEndpoint
+  Arguments := Arguments + ' -ActivationEndpoint ' + AddQuotes('{#OnlineActivationEndpoint}');
+#endif
   if not Exec(PowerShell, Arguments, Bootstrap, SW_HIDE, ewWaitUntilTerminated, ExitCode) then Exit;
   if ExitCode <> 0 then begin
     Result := 'Setup could not prepare activation. Use the original issuer key and key ID, or contact the test issuer.';
@@ -126,11 +152,15 @@ begin
   else if (ActivationPage.SelectedValueIndex = 1) and
       ((not FileExists(AddBackslash(LicensePage.Values[0]) + 'installation-id')) or
        (not FileExists(AddBackslash(LicensePage.Values[0]) + 'license.json'))) then
-    Result := 'The selected directory does not contain an imported test license.'
-  else if not FileExists(KeyPage.Values[0]) or (Trim(OptionsPage.Values[0]) = '') then
-    Result := 'Select the issuer public key and enter its key ID.'
-  else if Pos('"', OptionsPage.Values[0]) > 0 then
-    Result := 'Quotes are not allowed in the issuer ID.';
+    Result := 'The selected directory does not contain an imported test license.';
+#ifndef OnlineActivationEndpoint
+  if Result = '' then begin
+    if not FileExists(KeyPage.Values[0]) or (Trim(OptionsPage.Values[0]) = '') then
+      Result := 'Select the issuer public key and enter its key ID.'
+    else if Pos('"', OptionsPage.Values[0]) > 0 then
+      Result := 'Quotes are not allowed in the issuer ID.';
+  end;
+#endif
   if Result <> '' then Exit;
   DataDrive := ExtractFileDrive(DataPage.Values[0]);
   if (Length(DataDrive) <> 2) or (Pos(':\', DataPage.Values[0]) <> 2) or
@@ -161,10 +191,19 @@ begin
   else if FreeBytes < 1073741824 then
     Result := 'The application drive needs at least 1 GB free. Select another drive or free space first.';
   if Result <> '' then Exit;
+#ifdef OnlineActivationEndpoint
+  InstallIssuerKeyId := '{#OnlineIssuerKeyId}';
+#else
   InstallIssuerKey := KeyPage.Values[0];
+  InstallIssuerKeyId := Trim(OptionsPage.Values[0]);
+#endif
   InstallLicenseDir := RemoveBackslashUnlessRoot(LicensePage.Values[0]);
   if ActivationPage.SelectedValueIndex = 0 then begin
+#ifdef OnlineActivationEndpoint
+    InstallLicenseDir := ExpandConstant('{commonpf64}\Lee T Online QA Activation');
+#else
     InstallLicenseDir := ExpandConstant('{commonpf64}\Lee T Test Activation');
+#endif
     CachePath := Lowercase(AddBackslash(InstallLicenseDir));
     if (Pos(CachePath, DataPath) = 1) or (Pos(DataPath, CachePath) = 1) or
        (Pos(CachePath, AppPath) = 1) or (Pos(AppPath, CachePath) = 1) then
@@ -204,7 +243,7 @@ begin
     ' -DataRoot ' + AddQuotes(RemoveBackslashUnlessRoot(DataPage.Values[0])) +
     ' -LicenseDirectory ' + AddQuotes(InstallLicenseDir) +
     ' -IssuerPublicKey ' + AddQuotes(InstallIssuerKey) +
-    ' -IssuerKeyId ' + AddQuotes(Trim(OptionsPage.Values[0])) + ' -ConfirmNetworkTrust -GuiSetup';
+    ' -IssuerKeyId ' + AddQuotes(InstallIssuerKeyId) + ' -ConfirmNetworkTrust -GuiSetup';
   if not Exec(PowerShell, Arguments, ExpandConstant('{app}'), SW_SHOWNORMAL,
       ewWaitUntilTerminated, ProvisionResult) then
     ProvisionResult := 1;

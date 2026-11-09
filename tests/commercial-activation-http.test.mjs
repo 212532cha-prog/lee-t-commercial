@@ -9,6 +9,7 @@ import test from 'node:test';
 import { activateOnline, activationPath } from '../src/commercial/activation-client.mjs';
 import { createActivationServer } from '../src/commercial/activation-http.mjs';
 import { createFollowupActivationCode, createInitialActivationCode, initializeActivationLedger } from '../src/commercial/activation-ledger.mjs';
+import { createDesktopActivation } from '../src/commercial/desktop-activation.mjs';
 import { generateIssuerKeyPair } from '../src/commercial/license.mjs';
 import { localActivationRequest, requireLocalLicense } from '../src/commercial/server-license.mjs';
 import { testPool } from './helpers/database.mjs';
@@ -66,7 +67,15 @@ test('online activation uses trusted HTTPS, stores a signed license and can then
   assert.equal((await post('{')).status, 400);
   assert.equal((await post('x'.repeat(4097))).status, 413);
   const options = { readDevice, send };
-  const installed = await activateOnline(settings, code, options);
+  const desktopSettings = {
+    LEE_T_ACTIVATION_ENDPOINT: endpoint.href,
+    LEE_T_LICENSE_DIR: settings.LEE_T_LICENSE_DIR,
+    LEE_T_ISSUER_PUBLIC_KEY_PATH: settings.LEE_T_ISSUER_PUBLIC_KEY_PATH,
+    LEE_T_ISSUER_KEY_ID: settings.LEE_T_ISSUER_KEY_ID,
+  };
+  const desktop = createDesktopActivation(desktopSettings, options);
+  assert.deepEqual(await desktop({ schema: 1, action: 'activate', code }), { schema: 1, ok: true, state: 'activated' });
+  const installed = await requireLocalLicense(settings, { readDevice });
   assert.deepEqual(await activateOnline(settings, code, options), installed);
   await assert.rejects(activateOnline({ ...settings, LEE_T_LICENSE_DIR: join(directory, 'other') }, code, options), /HTTP 403/);
 
@@ -83,4 +92,7 @@ test('online activation uses trusted HTTPS, stores a signed license and can then
 
   await new Promise(resolve => server.close(resolve));
   assert.deepEqual(await requireLocalLicense(settings, { readDevice }), upgraded);
+  assert.deepEqual(await createDesktopActivation(desktopSettings, options)({ schema: 1, action: 'status' }), {
+    schema: 1, ok: true, state: 'activated', version: upgraded.entitledVersion,
+  });
 });
