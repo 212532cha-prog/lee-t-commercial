@@ -1,21 +1,118 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$DesktopTestExecutable,[string]$ManagementDirectory)
+param([Parameter(Mandatory=$true)][string]$DesktopTestExecutable,[string]$ManagementDirectory,[Parameter(Mandatory=$true)][string]$ActivationPayloadDirectory)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $temporary=Join-Path ([IO.Path]::GetTempPath()) ('leet-desktop-test-'+[guid]::NewGuid().ToString('N'))
 $certificate=$null
 $fixture=$null
 $test=$null
+$activationEntry=$null
 $cluster=$null
 $clusterStarted=$false
-$fixtureKeys=@('PGHOST','PGPORT','PGUSER','PGPASSWORD','PGDATABASE','WAREHOUSE_NATIVE_PG','LEET_DESKTOP_TEST_RUOYI_DIR','LEET_DESKTOP_TEST_ROOT','LEET_DESKTOP_TEST_CERT','LEET_DESKTOP_TEST_PASSWORD','LEET_DESKTOP_MANAGEMENT')
+$fixtureKeys=@('PGHOST','PGPORT','PGUSER','PGPASSWORD','PGDATABASE','WAREHOUSE_NATIVE_PG','LEET_DESKTOP_TEST_RUOYI_DIR','LEET_DESKTOP_TEST_ROOT','LEET_DESKTOP_TEST_CERT','LEET_DESKTOP_TEST_PASSWORD','LEET_DESKTOP_MANAGEMENT','LEET_ACTIVATION_TEST_ROOT','LEET_ACTIVATION_TEST_SOURCE','LEET_ACTIVATION_TEST_NODE')
 $previousFixtureEnvironment=@{}
 foreach($key in $fixtureKeys){$previousFixtureEnvironment[$key]=[Environment]::GetEnvironmentVariable($key,'Process')}
 try {
  $certificate=& (Join-Path $PSScriptRoot 'New-LanCertificate.ps1') -Address '192.168.10.25' -Directory $temporary -TrustLocally
  $env:LEET_DESKTOP_TEST_PFX=$certificate.PfxPath
  $env:LEET_DESKTOP_TEST_PASSPHRASE=$certificate.Passphrase
+ $activationRoot=Join-Path $temporary 'activation-ui'
+ $activationPayload=Join-Path $activationRoot 'payload'
+ foreach($folder in @('desktop','runtime','app\scripts')){New-Item -ItemType Directory -Path (Join-Path $activationPayload $folder) -Force | Out-Null}
+ Get-ChildItem -LiteralPath (Join-Path $ActivationPayloadDirectory 'desktop') | Copy-Item -Destination (Join-Path $activationPayload 'desktop') -Recurse
+ Copy-Item -LiteralPath (Get-Command node.exe).Source -Destination (Join-Path $activationPayload 'runtime\node.exe')
+ # Copy the real bridge and its built-in-only dependencies for the fixed installed-path check.
+ Copy-Item -LiteralPath (Join-Path $root 'scripts\desktop-activation.mjs') -Destination (Join-Path $activationPayload 'app\scripts\desktop-activation.mjs')
+ Copy-Item -LiteralPath (Join-Path $root 'src') -Destination (Join-Path $activationPayload 'app\src') -Recurse
+ Copy-Item -LiteralPath (Join-Path $root 'package.json') -Destination (Join-Path $activationPayload 'app\package.json')
+ foreach($path in @('runtime\node.exe','app\scripts','app\scripts\desktop-activation.mjs','app\src\commercial\license.mjs')){
+  & icacls.exe (Join-Path $activationPayload $path) '/grant:r' '*S-1-5-32-545:F' | Out-Null
+  if($LASTEXITCODE -ne 0){throw 'Cannot stage copied-file permission regression.'}
+ }
+ & node (Join-Path $root 'desktop\tests\prepare-activation-fixture.mjs') $activationRoot prepare
+ if($LASTEXITCODE -ne 0){throw 'Activation signing fixture failed.'}
+ $activationSettings=@{
+  PayloadDirectory=$activationPayload
+  LicenseDirectory=(Join-Path $activationRoot 'license')
+  IssuerPublicKey=(Join-Path $activationRoot 'issuer.pem')
+  IssuerKeyId='desktop-ui-test'
+  ActivationEndpoint='https://activation.example.test/redeem'
+ }
+ $prepareActivation=Join-Path $PSScriptRoot 'New-DesktopActivationConfig.ps1'
+ & $prepareActivation @activationSettings
+ $identityPath=Join-Path $activationSettings.LicenseDirectory 'installation-id'
+ $identity=[guid]::NewGuid().ToString()
+ [IO.File]::WriteAllText($identityPath,$identity)
+ $identityAcl=Get-Acl -LiteralPath $identityPath
+ $identityAcl.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
+ Set-Acl -LiteralPath $identityPath -AclObject $identityAcl
+ & $prepareActivation @activationSettings -Resume
+ if([IO.File]::ReadAllText($identityPath) -cne $identity){throw 'Resuming setup changed the installation identity.'}
+ $activationSettings.ActivationEndpoint='https://other.example.test/redeem'
+ $resumeRejected=$false
+ try{& $prepareActivation @activationSettings -Resume}catch{
+  if($_.Exception.Message -ne 'Activation setup settings have changed.'){throw}
+  $resumeRejected=$true
+ }
+ if(-not $resumeRejected -or [IO.File]::ReadAllText($identityPath) -cne $identity){throw 'Changed activation trust must be rejected without changing the identity.'}
+ Remove-Item -LiteralPath $identityPath
+ # The installer extracts a new bootstrap on each run. The device identity and
+ # pinned issuer must survive removing the entire previous bootstrap.
+ $cache=Join-Path $activationRoot 'installer-cache'
+ $bootstrap=Join-Path $activationRoot 'bootstrap'
+ $activationSettings.LicenseDirectory=$cache
+ $activationSettings.PayloadDirectory=$bootstrap
+ $activationSettings.ActivationEndpoint='https://activation.example.test/redeem'
+ $cacheIdentity=Join-Path $cache 'installation-id'
+ for($run=0;$run -lt 2;$run++){
+  foreach($folder in @('desktop','runtime','app\scripts')){
+   New-Item -ItemType Directory -Path (Join-Path $bootstrap $folder) -Force | Out-Null
+  }
+  foreach($file in @('desktop\LeeT.Warehouse.exe','runtime\node.exe','app\scripts\desktop-activation.mjs')){
+   Copy-Item -LiteralPath (Join-Path $activationPayload $file) -Destination (Join-Path $bootstrap $file)
+  }
+  & $prepareActivation @activationSettings -InstallerCache
+  $bootConfig=Get-Content -LiteralPath (Join-Path $bootstrap 'desktop\activation.private.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  if($bootConfig.Environment.LEE_T_LICENSE_DIR -cne $cache -or
+     $bootConfig.Environment.LEE_T_ISSUER_PUBLIC_KEY_PATH -cne (Join-Path $cache 'issuer-public.pem')){
+   throw 'Installer bootstrap did not use the protected cache.'
+  }
+  if($run -eq 0){
+   [IO.File]::WriteAllText($cacheIdentity,$identity)
+   $cachedAcl=Get-Acl -LiteralPath $cacheIdentity
+   $cachedAcl.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
+   Set-Acl -LiteralPath $cacheIdentity -AclObject $cachedAcl
+  }elseif([IO.File]::ReadAllText($cacheIdentity) -cne $identity){
+   throw 'A fresh installer bootstrap replaced the existing installation identity.'
+  }
+  Remove-Item -LiteralPath $bootstrap -Recurse -Force
+  $bootstrap=Join-Path $activationRoot 'bootstrap-reopened'
+  $activationSettings.PayloadDirectory=$bootstrap
+ }
+ Write-Output 'Installer cache preserves identity and issuer across freshly extracted bootstraps.'
+ $activationExe=Join-Path $activationPayload 'desktop\LeeT.Warehouse.exe'
+ $activationEntry=Start-Process -FilePath $activationExe -ArgumentList '--activate' -PassThru
+ [void]$activationEntry.Handle
+ for($attempt=0;$attempt -lt 100;$attempt++){
+  $activationEntry.Refresh()
+  if($activationEntry.HasExited){throw 'Native activation entry exited before showing its window.'}
+  if($activationEntry.MainWindowHandle -ne [IntPtr]::Zero){break}
+  Start-Sleep -Milliseconds 100
+ }
+ if($activationEntry.MainWindowTitle -ne 'Activate LEE T Warehouse' -or -not $activationEntry.CloseMainWindow()){throw 'Native activation window did not open.'}
+ if(-not $activationEntry.WaitForExit(10000)){throw 'Closing the native activation window did not terminate setup mode.'}
+ $activationEntry.Refresh()
+ if($activationEntry.ExitCode -ne 10){throw "Activation cancellation must return exit code 10. Actual: $($activationEntry.ExitCode)."}
+ $activationEntry=Start-Process -FilePath $activationExe -ArgumentList '--unexpected-argument' -PassThru
+ [void]$activationEntry.Handle
+ if(-not $activationEntry.WaitForExit(10000)){throw 'Invalid activation arguments did not terminate.'}
+ $activationEntry.Refresh()
+ if($activationEntry.ExitCode -ne 2){throw 'Unexpected activation arguments must be rejected.'}
+ Write-Output 'Actual desktop executable: native activation window/close exit 10 and invalid-argument exit 2 passed.'
+ $env:LEET_ACTIVATION_TEST_ROOT=$activationRoot
+ $env:LEET_ACTIVATION_TEST_SOURCE=$root
+ $env:LEET_ACTIVATION_TEST_NODE=(Get-Command node.exe).Source
  $fixtureScript=Join-Path $root 'desktop\tests\fixture.mjs'
  if($ManagementDirectory){
   $management=(Resolve-Path -LiteralPath $ManagementDirectory).Path
@@ -58,10 +155,14 @@ try {
  $test.Refresh()
  Get-Content -LiteralPath (Join-Path $temporary 'stdout.log')
  Get-Content -LiteralPath (Join-Path $temporary 'stderr.log')
+ $qaRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{$env:TEMP}
+ $qa=Join-Path $qaRoot 'leet-activation-preview'
+ New-Item -ItemType Directory -Path $qa -Force | Out-Null
+ Get-ChildItem -LiteralPath $activationRoot -Filter '*.png' | Copy-Item -Destination $qa
  Write-Output ('Desktop process exit code: '+$test.ExitCode)
  if($null -eq $test.ExitCode -or $test.ExitCode -ne 0){throw 'Desktop window tests failed.'}
 } finally {
- foreach($process in @($test,$fixture)){if($process -and -not $process.HasExited){Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue}}
+ foreach($process in @($test,$fixture,$activationEntry)){if($process -and -not $process.HasExited){Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue}}
  if($clusterStarted -and (Test-Path -LiteralPath $cluster)){& (Join-Path $pgBin 'pg_ctl.exe') -D $cluster -m fast -w stop | Out-Null}
  foreach($key in $fixtureKeys){[Environment]::SetEnvironmentVariable($key,$previousFixtureEnvironment[$key],'Process')}
  Remove-Item Env:LEET_DESKTOP_TEST_PFX,Env:LEET_DESKTOP_TEST_PASSPHRASE -ErrorAction SilentlyContinue

@@ -28,6 +28,11 @@ on:
       - '.github/workflows/windows-commercial-test-setup.yml'
   workflow_dispatch:
 
+# A new commit supersedes older checks on the same pull request.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -100,13 +105,18 @@ jobs:
           $tests = Join-Path $env:RUNNER_TEMP 'leet-desktop-tests'
           dotnet publish desktop/tests/LeeT.Desktop.Smoke.csproj -c Release -r win-x64 --self-contained true -o $tests
           if ($LASTEXITCODE -ne 0) { throw 'Desktop test build failed.' }
-          ./scripts/windows/Test-Desktop.ps1 -DesktopTestExecutable (Join-Path $tests 'LeeT.Desktop.Smoke.exe')
+          ./scripts/windows/Test-Desktop.ps1 -DesktopTestExecutable (Join-Path $tests 'LeeT.Desktop.Smoke.exe') -ActivationPayloadDirectory (Join-Path $env:RUNNER_TEMP 'leet-payload')
       - name: Verify real built management in the Windows app with PostgreSQL
         shell: powershell
         run: |
           $tests = Join-Path $env:RUNNER_TEMP 'leet-desktop-tests'
           $management = Join-Path $env:RUNNER_TEMP 'leet-payload\app\management'
-          ./scripts/windows/Test-Desktop.ps1 -DesktopTestExecutable (Join-Path $tests 'LeeT.Desktop.Smoke.exe') -ManagementDirectory $management
+          ./scripts/windows/Test-Desktop.ps1 -DesktopTestExecutable (Join-Path $tests 'LeeT.Desktop.Smoke.exe') -ManagementDirectory $management -ActivationPayloadDirectory (Join-Path $env:RUNNER_TEMP 'leet-payload')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LEE-T-native-activation-preview
+          path: ${{ runner.temp }}/leet-activation-preview/*.png
+          if-no-files-found: error
       - name: Build Windows test setup
         shell: powershell
         run: |
