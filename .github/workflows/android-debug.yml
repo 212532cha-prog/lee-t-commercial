@@ -12,6 +12,10 @@ on:
       - 'package-lock.json'
       - 'tests/commercial-android-launcher.test.mjs'
       - '.github/workflows/android-debug.yml'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/android-debug.yml'
   workflow_dispatch:
 
 permissions:
@@ -66,7 +70,14 @@ jobs:
       - name: Build and verify debug APK
         working-directory: mobile/android
         run: |
-          ./gradlew --no-daemon assembleDebug
+          wrapper=gradle/wrapper/gradle-wrapper.properties
+          sed -i '/^distributionUrl=/d; /^distributionSha256Sum=/d; /^networkTimeout=/d' "$wrapper"
+          cat >> "$wrapper" <<'GRADLE'
+          distributionUrl=https://downloads.gradle.org/distributions/gradle-8.14.3-bin.zip
+          distributionSha256Sum=bd71102213493060956ec229d946beee57158dbd89d0e62b91bca0fa2c5f3531
+          networkTimeout=60000
+          GRADLE
+          ./gradlew --no-daemon assembleDebug || ./gradlew --no-daemon assembleDebug
           apk=app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | grep -F "package: name='my.leet.warehouse'"
