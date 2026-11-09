@@ -69,7 +69,9 @@ test('Edge configuration enforces TLS, pins its private schema and creates one r
  const responses=await Promise.all(Array.from({length:16},()=>edge(post({code:f.code,request:f.request},path))));assert.ok(responses.every(r=>r.status===200));assert.equal(pools,1);
  assert.equal((await edge(post({code:f.code,request:f.request},'/untrusted-prefix'+activationPath))).status,404);
  const disabled=createEdgeActivation({environment:{},poolFactory:()=>{throw Error('must not create pool');}});const unavailable=await disabled(post({code:f.code,request:f.request},path));assert.equal(unavailable.status,503);assert.deepEqual(await unavailable.json(),{error:'ACTIVATION_UNAVAILABLE'});
- assert.throws(()=>issuerPoolOptions({SUPABASE_DB_URL:'https://database.example.invalid'}));
+ const ownerUrl=new URL('postgresql://database.example.invalid/issuer');
+ ownerUrl.username='owner';ownerUrl.password='test-only';
+ assert.throws(()=>issuerPoolOptions({SUPABASE_DB_URL:ownerUrl.toString()}));
 });
 test('trusted full activation endpoint preserves the installation across a lost response and stores a locally verifiable license',async t=>{
  const f=await fixture(t),root=await mkdtemp(join(tmpdir(),'leet-fetch-client-'));t.after(()=>rm(root,{recursive:true,force:true}));const publicKey=join(root,'public.pem');await writeFile(publicKey,f.issuer.publicKeyPem);
