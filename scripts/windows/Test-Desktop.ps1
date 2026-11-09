@@ -32,7 +32,31 @@ try {
  }
  & node (Join-Path $root 'desktop\tests\prepare-activation-fixture.mjs') $activationRoot prepare
  if($LASTEXITCODE -ne 0){throw 'Activation signing fixture failed.'}
- & (Join-Path $PSScriptRoot 'New-DesktopActivationConfig.ps1') -PayloadDirectory $activationPayload -LicenseDirectory (Join-Path $activationRoot 'license') -IssuerPublicKey (Join-Path $activationRoot 'issuer.pem') -IssuerKeyId 'desktop-ui-test' -ActivationEndpoint 'https://activation.example.test/redeem'
+ $activationSettings=@{
+  PayloadDirectory=$activationPayload
+  LicenseDirectory=(Join-Path $activationRoot 'license')
+  IssuerPublicKey=(Join-Path $activationRoot 'issuer.pem')
+  IssuerKeyId='desktop-ui-test'
+  ActivationEndpoint='https://activation.example.test/redeem'
+ }
+ $prepareActivation=Join-Path $PSScriptRoot 'New-DesktopActivationConfig.ps1'
+ & $prepareActivation @activationSettings
+ $identityPath=Join-Path $activationSettings.LicenseDirectory 'installation-id'
+ $identity=[guid]::NewGuid().ToString()
+ [IO.File]::WriteAllText($identityPath,$identity)
+ $identityAcl=Get-Acl -LiteralPath $identityPath
+ $identityAcl.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
+ Set-Acl -LiteralPath $identityPath -AclObject $identityAcl
+ & $prepareActivation @activationSettings -Resume
+ if([IO.File]::ReadAllText($identityPath) -cne $identity){throw 'Resuming setup changed the installation identity.'}
+ $activationSettings.ActivationEndpoint='https://other.example.test/redeem'
+ $resumeRejected=$false
+ try{& $prepareActivation @activationSettings -Resume}catch{
+  if($_.Exception.Message -ne 'Activation setup settings have changed.'){throw}
+  $resumeRejected=$true
+ }
+ if(-not $resumeRejected -or [IO.File]::ReadAllText($identityPath) -cne $identity){throw 'Changed activation trust must be rejected without changing the identity.'}
+ Remove-Item -LiteralPath $identityPath
  $activationExe=Join-Path $activationPayload 'desktop\LeeT.Warehouse.exe'
  $activationEntry=Start-Process -FilePath $activationExe -ArgumentList '--activate' -PassThru
  [void]$activationEntry.Handle
