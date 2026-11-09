@@ -59,18 +59,16 @@ try{
  $signatureCheck=@'
 import {readFileSync} from 'node:fs';
 import {verifyLicense} from './src/commercial/license.mjs';
-const {license,request,publicKeyPath}=JSON.parse(readFileSync(0,'utf8'));
+const {license,request,publicKeyPath}=JSON.parse(readFileSync(process.argv[1],'utf8'));
 const publicKeyPem=readFileSync(publicKeyPath,'utf8');
 if(!verifyLicense({license,request,publicKeyPem,runningVersion:'0.8.5'}).valid)process.exitCode=1;
 '@
  $verification=@{license=$signed;request=$request;publicKeyPath=(Join-Path $root 'issuer-public.pem')}|ConvertTo-Json -Depth 10 -Compress
- # Windows PowerShell can prepend a BOM when piping JSON to a native command.
- $previousOutputEncoding=$OutputEncoding
- try{
-  $OutputEncoding=[Text.UTF8Encoding]::new($false)
-  $verification | & $node --input-type=module -e $signatureCheck
-  if($LASTEXITCODE -ne 0){throw 'The generated publisher key did not verify the signed license.'}
- }finally{$OutputEncoding=$previousOutputEncoding}
+ # Write exact UTF-8 bytes instead of using the Windows PowerShell native pipeline.
+ $verificationPath=Join-Path $root 'signature-check.json'
+ [IO.File]::WriteAllText($verificationPath,$verification,[Text.UTF8Encoding]::new($false))
+ & $node --input-type=module -e $signatureCheck -- $verificationPath
+ if($LASTEXITCODE -ne 0){throw 'The generated publisher key did not verify the signed license.'}
  Write-Output 'Windows local issuer setup, TLS operator login, paid signing and exact retry passed.'
 }finally{
  $databaseListener.Stop()
