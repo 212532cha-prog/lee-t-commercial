@@ -11,6 +11,7 @@ import { hashPassword } from '../src/auth/service.mjs';
 import { initializeActivationLedger } from '../src/commercial/activation-ledger.mjs';
 import { initializeLicenseManagement } from '../src/commercial/license-management.mjs';
 import { createManagementServer } from '../src/commercial/management-http.mjs';
+import { createDeviceRequest, generateIssuerKeyPair, verifyLicense } from '../src/commercial/license.mjs';
 import { testPool } from './helpers/database.mjs';
 
 test('real TLS management requires trusted client certificate, matched password, scope and issuer role', async t => {
@@ -46,7 +47,8 @@ test('real TLS management requires trusted client certificate, matched password,
   const passwordHash = await hashPassword(secret);
   const operator = (id, role, tls) => ({ id, role, fingerprint: new X509Certificate(tls.cert).fingerprint256, passwordHash });
   const origin = 'https://localhost';
-  server = createManagementServer({ tls: { ...host, ca }, pool, origin, operators: [
+  const signing = { ...generateIssuerKeyPair(), keyId: 'management-offline-test' };
+  server = createManagementServer({ tls: { ...host, ca }, pool, origin, offlineIssuer: signing, operators: [
     operator('sales-test', 'sales', sales), operator('issuer-test', 'issuer', issuer),
   ] });
   server.listen(0, '127.0.0.1');
@@ -97,4 +99,29 @@ test('real TLS management requires trusted client certificate, matched password,
   const audit = await call('/api/audit?customerId=' + customerId);
   assert.equal(audit.body.some(row => row.actor === 'issuer-test' && row.action === 'code_issued'), true);
   assert.equal(JSON.stringify(audit.body).includes(issuance.body.code), false);
+
+  const offlinePayment = await call('/api/payments', {
+    data: { customerId, receiptReference: 'receipt-offline', kind: 'initial', version: '1.0.0' },
+  });
+  assert.equal(offlinePayment.status, 201);
+  const device = { machineId: 'fixture-machine', boardId: 'fixture-board', systemDiskId: 'fixture-disk' };
+  const deviceRequest = createDeviceRequest({ device });
+  const offline = { customerId, paymentId: offlinePayment.body.id, request: deviceRequest };
+  const issuerOptions = { tls: issuer, login: 'issuer-test:' + secret };
+  const sign = input => call('/api/sign-offline', { ...issuerOptions, data: input });
+  assert.equal((await call('/api/sign-offline', { data: offline })).status, 403);
+  assert.equal((await sign({ ...offline, paymentId: payment.body.id })).status, 409);
+  assert.equal((await sign({ ...offline, request: {} })).status, 422);
+  const signed = await Promise.all([sign(offline), sign(offline)]);
+  for (const response of signed) assert.equal(response.status, 201);
+  assert.deepEqual(signed[0].body, signed[1].body);
+  assert.ok(verifyLicense({ license: signed[0].body, publicKeyPem: signing.publicKeyPem, request: deviceRequest, runningVersion: '1.0.0' }).valid);
+  assert.equal((await sign({ ...offline, request: createDeviceRequest({ device }) })).status, 409);
+  await pool.query(`UPDATE lee_t_activation_codes SET expires_at=now()-interval '1 second'
+    WHERE code_hash=(SELECT code_hash FROM lee_t_management_payments WHERE id=$1)`, [offline.paymentId]);
+  const downloadedAgain = await sign(offline);
+  assert.equal(downloadedAgain.status, 201);
+  assert.deepEqual(downloadedAgain.body, signed[0].body);
+  const events = await call('/api/audit?customerId=' + customerId);
+  assert.equal(events.body.filter(row => row.payment_id === offline.paymentId && row.action === 'code_issued').length, 1);
 });

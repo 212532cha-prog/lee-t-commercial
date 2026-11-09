@@ -1,5 +1,20 @@
 # LEE T activation Edge adapter
 
+## Local offline signing
+
+The local operator service (`node scripts/start-license-management.mjs`) uses its
+own local PostgreSQL issuer ledger, client certificate, and operator password.
+To enable **Sign offline license**, configure both `issuerKeyId` and
+`issuerKeyPath` in the protected management config. The private Ed25519 PEM
+stays on the publisher PC. The signing-enabled listener and HTTPS origin must
+both use loopback.
+
+Select a customer and a confirmed payment, upload the customer's device
+request JSON, and download `LeeT-signed-license.json`. Upgrades and transfers
+also require the prior license ID. A retry with the same payment and device
+request downloads the existing license. The customer imports the signed
+JSON using an installer that trusts the matching public key.
+
 This adapter exposes only `POST /v1/activation/redeem`. It reuses the existing PostgreSQL activation ledger and Ed25519 signatures. It has no customer, payment, signing-code creation, operator, or warehouse-data API. Existing mutual-TLS/password management remains unchanged.
 
 ## Build and test
@@ -16,6 +31,7 @@ The Edge workflow pins Deno 2.9.6, builds this standalone file, starts it as a s
 - `LEE_T_ISSUER_DB_CA`: optional trusted database CA PEM. Certificate and hostname validation stay enabled.
 
 The connection string cannot disable TLS or change the private `lee_t_license` search path. The adapter does not create tables or grant permissions on a public request. Before real signing is enabled, provision the ledger in that private schema, restrict a dedicated database role, inspect RLS/grants and advisors, and complete key recovery/rotation and actual hosted redemption acceptance. Do not use a customer's warehouse database or expose issuer tables to Data API roles.
+
 
 The public endpoint uses the one-time activation code as its credential and does not use a warehouse session JWT. A hosted function therefore performs its own code authorization. This does not turn off operator MFA: management is not exposed by this adapter. Body bytes are bounded at 4,096; unsupported routes/methods and malformed content are rejected. Errors and diagnostics never contain a code, hardware request, database URL or signing material. There is no demo-key fallback.
 
