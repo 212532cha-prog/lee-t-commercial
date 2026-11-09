@@ -2,6 +2,24 @@
 
 ## Local offline signing
 
+For first-time Windows setup, use an elevated PowerShell from the publisher
+source directory with its locked Node dependencies installed. Point
+`-NodePath` at a trusted Node executable and `-PostgresDirectory` at a
+trusted PostgreSQL 17 distribution. The scripts may reuse those binaries
+from a warehouse install. The issuer has a separate service, database,
+data directory and signing key.
+
+```powershell
+.\scripts\windows\Initialize-LocalLicenseCenter.ps1 -NodePath <node.exe> -PostgresDirectory <PostgreSQL-directory>
+.\scripts\windows\Start-LocalLicenseCenter.ps1 -NodePath <node.exe>
+```
+
+Open `https://127.0.0.1:8444` in a browser under the Windows account
+that initialized the issuer. Choose the License Center client certificate,
+then sign in as `issuer` with the password set during initialization.
+Keep the console open while using the backend. The protected data directory
+contains the publisher public key and its ID for client trust configuration.
+
 The local operator service (`node scripts/start-license-management.mjs`) uses its
 own local PostgreSQL issuer ledger, client certificate, and operator password.
 To enable **Sign offline license**, configure both `issuerKeyId` and

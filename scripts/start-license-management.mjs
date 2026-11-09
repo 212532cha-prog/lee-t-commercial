@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { X509Certificate } from 'node:crypto';
 import pg from 'pg';
 import { createManagementServer } from '../src/commercial/management-http.mjs';
 
@@ -9,9 +10,10 @@ try {
   const origin = new URL(settings.origin);
   const port = Number(origin.port || 443);
   const bind = settings.bind ?? '127.0.0.1';
-  const [key, cert, ca] = await Promise.all([
-    readFile(settings.tlsKeyPath), readFile(settings.tlsCertPath), readFile(settings.clientCaPath),
-  ]);
+  const caBytes = await readFile(settings.clientCaPath);
+  const tls = settings.tlsPfxPath
+    ? { pfx: await readFile(settings.tlsPfxPath), passphrase: settings.tlsPfxPassphrase, ca: new X509Certificate(caBytes).toString() }
+    : { key: await readFile(settings.tlsKeyPath), cert: await readFile(settings.tlsCertPath), ca: caBytes };
   let offlineIssuer;
   if (settings.issuerKeyId || settings.issuerKeyPath) {
     if (!settings.issuerKeyId || !settings.issuerKeyPath) throw Error('Incomplete offline issuer configuration.');
@@ -23,7 +25,7 @@ try {
   pool = new pg.Pool({ connectionString: settings.databaseUrl, connectionTimeoutMillis: 5000 });
   await pool.query('SELECT id FROM lee_t_customers LIMIT 0');
   const server = createManagementServer({
-    tls: { key, cert, ca }, origin: settings.origin, operators: settings.operators, pool, offlineIssuer,
+    tls, origin: settings.origin, operators: settings.operators, pool, offlineIssuer,
     onError: () => console.error('License management request failed.'),
   });
   server.on('error', async () => {

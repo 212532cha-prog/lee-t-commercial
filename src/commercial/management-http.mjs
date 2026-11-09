@@ -49,7 +49,7 @@ async function jsonBody(req) {
 }
 
 export function createManagementServer({ tls, origin, operators, pool, offlineIssuer, onError = () => {} }) {
-  if (!tls?.key || !tls.cert || !tls.ca || !pool || !Array.isArray(operators) || !operators.length ||
+  if (!(tls?.pfx || (tls?.key && tls.cert)) || !tls.ca || !pool || !Array.isArray(operators) || !operators.length ||
       new URL(origin).protocol !== 'https:' || new URL(origin).origin !== origin) {
     throw Error('Management requires an HTTPS origin, client CA, database and operator configuration.');
   }
@@ -70,7 +70,7 @@ export function createManagementServer({ tls, origin, operators, pool, offlineIs
     grants.set(fingerprint, { operator: { id, role, customerId }, passwordHash, attempts: [] });
   }
   return createServer({
-    key: tls.key, cert: tls.cert, ca: tls.ca, requestCert: true, rejectUnauthorized: true,
+    ...tls, requestCert: true, rejectUnauthorized: true,
     minVersion: 'TLSv1.2', requestTimeout: 10000,
   }, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
