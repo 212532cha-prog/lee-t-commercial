@@ -12,6 +12,10 @@ on:
       - 'package-lock.json'
       - 'tests/commercial-android-launcher.test.mjs'
       - '.github/workflows/android-debug.yml'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/android-debug.yml'
   workflow_dispatch:
 
 permissions:
