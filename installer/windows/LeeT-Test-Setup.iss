@@ -7,6 +7,7 @@
 
 [Setup]
 AppId=LeeTCommercialWarehouseTest
+SetupMutex=LeeTCommercialWarehouseTestSetup
 AppName=LEE T Commercial Warehouse Test
 AppVersion=0.8.5
 DefaultDirName={autopf}\Lee T Commercial
@@ -21,19 +22,34 @@ Compression=lzma2
 SolidCompression=yes
 
 [Files]
+Source: "{#PayloadDir}\desktop\*"; DestDir: "{tmp}\activation\desktop"; Flags: dontcopy recursesubdirs
+Source: "{#PayloadDir}\runtime\node.exe"; DestDir: "{tmp}\activation\runtime"; Flags: dontcopy
+Source: "{#PayloadDir}\app\package.json"; DestDir: "{tmp}\activation\app"; Flags: dontcopy
+Source: "{#PayloadDir}\app\src\*"; DestDir: "{tmp}\activation\app\src"; Flags: dontcopy recursesubdirs
+Source: "{#PayloadDir}\app\scripts\desktop-activation.mjs"; DestDir: "{tmp}\activation\app\scripts"; Flags: dontcopy
+Source: "{#PayloadDir}\app\scripts\windows\New-DesktopActivationConfig.ps1"; DestDir: "{tmp}\activation\app\scripts\windows"; Flags: dontcopy
+Source: "{#PayloadDir}\app\scripts\windows\Protect-Directory.ps1"; DestDir: "{tmp}\activation\app\scripts\windows"; Flags: dontcopy
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Code]
 var
+  ActivationPage: TInputOptionWizardPage;
   LicensePage: TInputDirWizardPage;
   KeyPage: TInputFileWizardPage;
   OptionsPage: TInputQueryWizardPage;
   DataPage: TInputDirWizardPage;
   ProvisionResult: Integer;
+  InstallLicenseDir, InstallIssuerKey: String;
 
 procedure InitializeWizard;
 begin
-  LicensePage := CreateInputDirPage(wpSelectDir, 'Existing test license',
+  ActivationPage := CreateInputOptionPage(wpSelectDir, 'Test activation',
+    'Choose how to activate this installation.',
+    'Use the supplied test issuer key for either option.', True, False);
+  ActivationPage.Add('Open the activation window');
+  ActivationPage.Add('Use a test license that is already imported');
+  ActivationPage.SelectedValueIndex := 0;
+  LicensePage := CreateInputDirPage(ActivationPage.ID, 'Existing test license',
     'Choose the directory containing the imported Lee T test license.',
     'The directory must contain installation-id and license.json.', False, '');
   LicensePage.Add('License directory');
@@ -54,9 +70,52 @@ begin
   DataPage.Values[0] := ExpandConstant('{commonappdata}\Lee T Commercial');
 end;
 
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = LicensePage.ID) and (ActivationPage.SelectedValueIndex = 0);
+end;
+
+function PrepareNativeActivation: String;
+var
+  Bootstrap, Script, PowerShell, Arguments: String;
+  ExitCode: Integer;
+begin
+  Result := 'The LEE T activation window could not start.';
+  if WizardSilent then begin
+    Result := 'Open Setup interactively to activate LEE T.';
+    Exit;
+  end;
+  Bootstrap := ExpandConstant('{tmp}\activation');
+  try
+    ExtractTemporaryFiles('{tmp}\activation\*');
+  except
+    Exit;
+  end;
+  PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  Script := AddBackslash(Bootstrap) + 'app\scripts\windows\New-DesktopActivationConfig.ps1';
+  Arguments := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + AddQuotes(Script) +
+    ' -PayloadDirectory ' + AddQuotes(Bootstrap) +
+    ' -LicenseDirectory ' + AddQuotes(InstallLicenseDir) +
+    ' -IssuerPublicKey ' + AddQuotes(KeyPage.Values[0]) +
+    ' -IssuerKeyId ' + AddQuotes(Trim(OptionsPage.Values[0])) + ' -InstallerCache';
+  if not Exec(PowerShell, Arguments, Bootstrap, SW_HIDE, ewWaitUntilTerminated, ExitCode) then Exit;
+  if ExitCode <> 0 then begin
+    Result := 'Setup could not prepare activation. Use the original issuer key and key ID, or contact the test issuer.';
+    Exit;
+  end;
+  if not Exec(AddBackslash(Bootstrap) + 'desktop\LeeT.Warehouse.exe', '--activate', Bootstrap,
+      SW_SHOWNORMAL, ewWaitUntilTerminated, ExitCode) then Exit;
+  if ExitCode = 10 then
+    Result := 'Activation was closed. Reopen Setup with the same issuer settings to continue.'
+  else if ExitCode = 0 then begin
+    InstallIssuerKey := AddBackslash(InstallLicenseDir) + 'issuer-public.pem';
+    Result := '';
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
-  DataDrive, AppDrive, DataPath, AppPath: String;
+  DataDrive, AppDrive, DataPath, AppPath, CachePath: String;
   FreeBytes, TotalBytes: Int64;
 begin
   Result := '';
@@ -64,8 +123,9 @@ begin
     Result := 'This test setup requires a new installation. An existing directory was found.'
   else if Trim(DataPage.Values[0]) = '' then
     Result := 'Choose a warehouse data directory.'
-  else if not FileExists(AddBackslash(LicensePage.Values[0]) + 'installation-id') or
-      not FileExists(AddBackslash(LicensePage.Values[0]) + 'license.json') then
+  else if (ActivationPage.SelectedValueIndex = 1) and
+      ((not FileExists(AddBackslash(LicensePage.Values[0]) + 'installation-id')) or
+       (not FileExists(AddBackslash(LicensePage.Values[0]) + 'license.json'))) then
     Result := 'The selected directory does not contain an imported test license.'
   else if not FileExists(KeyPage.Values[0]) or (Trim(OptionsPage.Values[0]) = '') then
     Result := 'Select the issuer public key and enter its key ID.'
@@ -100,6 +160,18 @@ begin
     Result := 'Cannot check the application drive.'
   else if FreeBytes < 1073741824 then
     Result := 'The application drive needs at least 1 GB free. Select another drive or free space first.';
+  if Result <> '' then Exit;
+  InstallIssuerKey := KeyPage.Values[0];
+  InstallLicenseDir := RemoveBackslashUnlessRoot(LicensePage.Values[0]);
+  if ActivationPage.SelectedValueIndex = 0 then begin
+    InstallLicenseDir := ExpandConstant('{commonpf64}\Lee T Test Activation');
+    CachePath := Lowercase(AddBackslash(InstallLicenseDir));
+    if (Pos(CachePath, DataPath) = 1) or (Pos(DataPath, CachePath) = 1) or
+       (Pos(CachePath, AppPath) = 1) or (Pos(AppPath, CachePath) = 1) then
+      Result := 'Choose application and data directories outside the protected activation folder.'
+    else
+      Result := PrepareNativeActivation;
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -130,8 +202,8 @@ begin
   Arguments := '-NoProfile -ExecutionPolicy Bypass -File ' + AddQuotes(Script) +
     ' -PayloadDirectory ' + AddQuotes(ExpandConstant('{app}')) +
     ' -DataRoot ' + AddQuotes(RemoveBackslashUnlessRoot(DataPage.Values[0])) +
-    ' -LicenseDirectory ' + AddQuotes(RemoveBackslashUnlessRoot(LicensePage.Values[0])) +
-    ' -IssuerPublicKey ' + AddQuotes(KeyPage.Values[0]) +
+    ' -LicenseDirectory ' + AddQuotes(InstallLicenseDir) +
+    ' -IssuerPublicKey ' + AddQuotes(InstallIssuerKey) +
     ' -IssuerKeyId ' + AddQuotes(Trim(OptionsPage.Values[0])) + ' -ConfirmNetworkTrust -GuiSetup';
   if not Exec(PowerShell, Arguments, ExpandConstant('{app}'), SW_SHOWNORMAL,
       ewWaitUntilTerminated, ProvisionResult) then

@@ -57,6 +57,40 @@ try {
  }
  if(-not $resumeRejected -or [IO.File]::ReadAllText($identityPath) -cne $identity){throw 'Changed activation trust must be rejected without changing the identity.'}
  Remove-Item -LiteralPath $identityPath
+ # The installer extracts a new bootstrap on each run. The device identity and
+ # pinned issuer must survive removing the entire previous bootstrap.
+ $cache=Join-Path $activationRoot 'installer-cache'
+ $bootstrap=Join-Path $activationRoot 'bootstrap'
+ $activationSettings.LicenseDirectory=$cache
+ $activationSettings.PayloadDirectory=$bootstrap
+ $activationSettings.ActivationEndpoint='https://activation.example.test/redeem'
+ $cacheIdentity=Join-Path $cache 'installation-id'
+ for($run=0;$run -lt 2;$run++){
+  foreach($folder in @('desktop','runtime','app\scripts')){
+   New-Item -ItemType Directory -Path (Join-Path $bootstrap $folder) -Force | Out-Null
+  }
+  foreach($file in @('desktop\LeeT.Warehouse.exe','runtime\node.exe','app\scripts\desktop-activation.mjs')){
+   Copy-Item -LiteralPath (Join-Path $activationPayload $file) -Destination (Join-Path $bootstrap $file)
+  }
+  & $prepareActivation @activationSettings -InstallerCache
+  $bootConfig=Get-Content -LiteralPath (Join-Path $bootstrap 'desktop\activation.private.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  if($bootConfig.Environment.LEE_T_LICENSE_DIR -cne $cache -or
+     $bootConfig.Environment.LEE_T_ISSUER_PUBLIC_KEY_PATH -cne (Join-Path $cache 'issuer-public.pem')){
+   throw 'Installer bootstrap did not use the protected cache.'
+  }
+  if($run -eq 0){
+   [IO.File]::WriteAllText($cacheIdentity,$identity)
+   $cachedAcl=Get-Acl -LiteralPath $cacheIdentity
+   $cachedAcl.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
+   Set-Acl -LiteralPath $cacheIdentity -AclObject $cachedAcl
+  }elseif([IO.File]::ReadAllText($cacheIdentity) -cne $identity){
+   throw 'A fresh installer bootstrap replaced the existing installation identity.'
+  }
+  Remove-Item -LiteralPath $bootstrap -Recurse -Force
+  $bootstrap=Join-Path $activationRoot 'bootstrap-reopened'
+  $activationSettings.PayloadDirectory=$bootstrap
+ }
+ Write-Output 'Installer cache preserves identity and issuer across freshly extracted bootstraps.'
  $activationExe=Join-Path $activationPayload 'desktop\LeeT.Warehouse.exe'
  $activationEntry=Start-Process -FilePath $activationExe -ArgumentList '--activate' -PassThru
  [void]$activationEntry.Handle

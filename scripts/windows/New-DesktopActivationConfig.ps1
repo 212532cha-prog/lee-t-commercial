@@ -6,7 +6,8 @@ param(
  [Parameter(Mandatory=$true)][string]$IssuerPublicKey,
  [Parameter(Mandatory=$true)][string]$IssuerKeyId,
  [string]$ActivationEndpoint,
- [switch]$Resume
+ [switch]$Resume,
+ [switch]$InstallerCache
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Protect-Directory.ps1')
@@ -32,6 +33,11 @@ if($ActivationEndpoint){
 $desktop=Join-Path $payload 'desktop'
 $config=Join-Path $desktop 'activation.private.json'
 $trust=Join-Path $payload 'publisher'
+$savedConfig=$config
+if($InstallerCache){
+ $trust=$licensePath
+ $savedConfig=Join-Path $trust 'setup.private.json'
+}
 $publicKey=Join-Path $trust 'issuer-public.pem'
 if(Test-Path -LiteralPath (Join-Path $payload 'app\activation')){throw 'Activation setup already exists. Preserve it for the repair workflow.'}
 $environment=@{
@@ -40,12 +46,15 @@ $environment=@{
  LEE_T_ISSUER_KEY_ID=$IssuerKeyId
 }
 if($ActivationEndpoint){$environment.LEE_T_ACTIVATION_ENDPOINT=$ActivationEndpoint}
-if($Resume -and (Test-Path -LiteralPath $config -PathType Leaf)){
+$resuming=($Resume -or $InstallerCache) -and (Test-Path -LiteralPath $savedConfig -PathType Leaf)
+if($resuming){
  $trustedWriters=@('S-1-5-32-544','S-1-5-18')
  $writes=[Security.AccessControl.FileSystemRights]'Write, Delete, DeleteSubdirectoriesAndFiles, ChangePermissions, TakeOwnership'
  if(-not (Test-Path -LiteralPath $licensePath -PathType Container)){throw 'The original activation directory is missing.'}
  $activationFiles=@(Get-ChildItem -LiteralPath $licensePath -Force)
- foreach($item in @((Get-Item -LiteralPath $config,$desktop,$trust,$publicKey,$licensePath))+$activationFiles){
+ $protectedPaths=@($savedConfig,$trust,$publicKey,$licensePath)
+ if(-not $InstallerCache){$protectedPaths+=$desktop}
+ foreach($item in @((Get-Item -LiteralPath $protectedPaths))+$activationFiles){
   if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Activation setup cannot use linked files or directories.'}
   $acl=Get-Acl -LiteralPath $item.FullName
   if($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trustedWriters){throw 'Existing activation setup must remain protected.'}
@@ -55,10 +64,12 @@ if($Resume -and (Test-Path -LiteralPath $config -PathType Leaf)){
    }
   }
  }
- if(@($activationFiles | Where-Object {$_.PSIsContainer -or $_.Name -cnotin @('installation-id','license.json')}).Count){
+ $allowedFiles=@('installation-id','license.json')
+ if($InstallerCache){$allowedFiles+=@('issuer-public.pem','setup.private.json')}
+ if(@($activationFiles | Where-Object {$_.PSIsContainer -or $_.Name -cnotin $allowedFiles}).Count){
   throw 'Existing activation data requires repair.'
  }
- $saved=(Get-Content -LiteralPath $config -Raw -Encoding UTF8 | ConvertFrom-Json).Environment
+ $saved=(Get-Content -LiteralPath $savedConfig -Raw -Encoding UTF8 | ConvertFrom-Json).Environment
  if(@($saved.PSObject.Properties).Count -ne $environment.Count){throw 'Activation setup settings have changed.'}
  foreach($name in $environment.Keys){
   if($saved.$name -cne $environment[$name]){throw 'Activation setup settings have changed.'}
@@ -67,10 +78,10 @@ if($Resume -and (Test-Path -LiteralPath $config -PathType Leaf)){
   throw 'The issuer public key does not match the original activation setup.'
  }
  Write-Output 'Existing protected LEE T activation setup preserved.'
- return
+ if(-not $InstallerCache){return}
 }
-if((Test-Path -LiteralPath $licensePath) -and @(Get-ChildItem -LiteralPath $licensePath -Force).Count){throw 'Existing activation data was found. Preserve it for repair or migration.'}
-if((Test-Path -LiteralPath $config) -or (Test-Path -LiteralPath $publicKey)){throw 'Activation setup already exists. Preserve it for the repair workflow.'}
+if(-not $resuming -and (Test-Path -LiteralPath $licensePath) -and @(Get-ChildItem -LiteralPath $licensePath -Force).Count){throw 'Existing activation data was found. Preserve it for repair or migration.'}
+if((Test-Path -LiteralPath $config) -or (-not $resuming -and (Test-Path -LiteralPath $publicKey))){throw 'Activation setup already exists. Preserve it for the repair workflow.'}
 foreach($path in @((Join-Path $payload 'runtime\node.exe'),(Join-Path $payload 'app\scripts\desktop-activation.mjs'),(Join-Path $desktop 'LeeT.Warehouse.exe'))){
  if(-not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'The complete desktop payload is required.'}
 }
@@ -90,8 +101,11 @@ function Set-ActivationFileAccess([string]$Path,[switch]$Private){
  }
  Set-Acl -LiteralPath $Path -AclObject $security
 }
-$programRoots=@($desktop,(Join-Path $payload 'runtime'),(Join-Path $payload 'app'),$trust)
-New-Item -ItemType Directory -Path $trust -Force | Out-Null
+$programRoots=@($desktop,(Join-Path $payload 'runtime'),(Join-Path $payload 'app'))
+if(-not $InstallerCache){
+ New-Item -ItemType Directory -Path $trust -Force | Out-Null
+ $programRoots+=$trust
+}
 $programItems=@($programRoots | ForEach-Object {Get-Item -LiteralPath $_;Get-ChildItem -LiteralPath $_ -Recurse -Force})
 if(@($programItems | Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0}).Count){throw 'Activation setup cannot use linked program files or directories.'}
 foreach($item in $programItems){
@@ -102,12 +116,20 @@ foreach($item in $programItems){
   Set-Acl -LiteralPath $item.FullName -AclObject $security
  }else{Set-ActivationFileAccess $item.FullName}
 }
-Protect-Directory $licensePath 'RX'
-$licenseSecurity=Get-Acl -LiteralPath $licensePath
-$licenseSecurity.SetOwner($administrator)
-Set-Acl -LiteralPath $licensePath -AclObject $licenseSecurity
-Copy-Item -LiteralPath $IssuerPublicKey -Destination $publicKey
-Set-ActivationFileAccess $publicKey
-[IO.File]::WriteAllText($config,(@{Environment=$environment}|ConvertTo-Json -Depth 3),[Text.UTF8Encoding]::new($false))
+$settings=@{Environment=$environment}|ConvertTo-Json -Depth 3
+$utf8=[Text.UTF8Encoding]::new($false)
+if(-not $resuming){
+ Protect-Directory $licensePath 'RX'
+ $licenseSecurity=Get-Acl -LiteralPath $licensePath
+ $licenseSecurity.SetOwner($administrator)
+ Set-Acl -LiteralPath $licensePath -AclObject $licenseSecurity
+ Copy-Item -LiteralPath $IssuerPublicKey -Destination $publicKey
+ Set-ActivationFileAccess $publicKey
+ if($InstallerCache){
+  [IO.File]::WriteAllText($savedConfig,$settings,$utf8)
+  Set-ActivationFileAccess $savedConfig -Private
+ }
+}
+[IO.File]::WriteAllText($config,$settings,$utf8)
 Set-ActivationFileAccess $config -Private
 Write-Output 'Protected LEE T desktop activation settings prepared. No warehouse database configuration was copied.'
