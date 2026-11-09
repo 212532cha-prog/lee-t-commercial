@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 
 namespace LeeT.Desktop;
@@ -54,7 +55,10 @@ internal sealed class ActivationWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F3F6FB"));
         var body = new StackPanel { Margin = new Thickness(28), MaxWidth = 520 };
-        body.Children.Add(Text("LEE T", 26, "#1E40AF", FontWeights.Bold));
+        var logo = new BitmapImage(new Uri("pack://application:,,,/LeeT.Warehouse;component/Brand/lee-t-logo.jpg"));
+        var brand = new Image { Source = logo, Width = 100, Height = 46, HorizontalAlignment = HorizontalAlignment.Left };
+        System.Windows.Automation.AutomationProperties.SetName(brand, "LEE T");
+        body.Children.Add(brand);
         body.Children.Add(Text("Activate your warehouse", 22, "#0F172A", FontWeights.SemiBold));
         body.Children.Add(Text("Activate once on this computer. Your warehouse data stays here and your licensed version can work without the internet.", 13, "#64748B"));
         var online = new StackPanel();

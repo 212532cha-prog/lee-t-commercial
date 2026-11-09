@@ -1,0 +1,44 @@
+{
+  "en": {
+    "title": "LEE T Warehouse setup",
+    "heading": "Create your administrator account",
+    "help": "Choose the username you will use to sign in. Use a password of 6 to 128 characters.",
+    "Username": "Username",
+    "DisplayName": "Display name",
+    "Password": "Password",
+    "ConfirmPassword": "Confirm password",
+    "Continue": "Continue installation",
+    "usernameError": "Enter a username of 1 to 64 characters.",
+    "nameError": "Enter a display name of 1 to 128 characters.",
+    "shortError": "Use at least 6 characters.",
+    "matchError": "The passwords do not match."
+  },
+  "zh": {
+    "title": "LEE T 仓库安装",
+    "heading": "创建管理员账号",
+    "help": "请设置登录用的用户名。密码须为 6 到 128 个字符。",
+    "Username": "用户名",
+    "DisplayName": "显示名称",
+    "Password": "密码",
+    "ConfirmPassword": "确认密码",
+    "Continue": "继续安装",
+    "usernameError": "请输入 1 到 64 个字符的用户名。",
+    "nameError": "请输入 1 到 128 个字符的显示名称。",
+    "shortError": "密码至少需要 6 个字符。",
+    "matchError": "两次输入的密码不一致。"
+  },
+  "ms": {
+    "title": "Persediaan Gudang LEE T",
+    "heading": "Cipta akaun pentadbir anda",
+    "help": "Pilih nama pengguna untuk log masuk. Gunakan kata laluan antara 6 hingga 128 aksara.",
+    "Username": "Nama pengguna",
+    "DisplayName": "Nama paparan",
+    "Password": "Kata laluan",
+    "ConfirmPassword": "Sahkan kata laluan",
+    "Continue": "Teruskan pemasangan",
+    "usernameError": "Masukkan nama pengguna antara 1 hingga 64 aksara.",
+    "nameError": "Masukkan nama paparan antara 1 hingga 128 aksara.",
+    "shortError": "Gunakan sekurang-kurangnya 6 aksara.",
+    "matchError": "Kata laluan tidak sepadan."
+  }
+}

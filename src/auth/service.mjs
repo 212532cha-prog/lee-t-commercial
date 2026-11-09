@@ -2,6 +2,7 @@ import {randomBytes,randomUUID,createHash,timingSafeEqual} from 'node:crypto';
 import {hash,verify,Algorithm} from '@node-rs/argon2';
 import {transaction} from '../db/database.mjs';
 export class AuthError extends Error{constructor(code,status=400){super(code);this.code=code;this.status=status;}}
+export const defaultAdministratorUsername='CTL LEE';
 export const digest=value=>createHash('sha256').update(value).digest('hex');
 const token=()=>randomBytes(32).toString('base64url');
 const publicUser=row=>({id:row.id,username:row.username,realName:row.real_name,role:row.role,active:row.active,profileVersion:String(row.profile_version??0),hasAvatar:!!row.avatar_key});
@@ -33,13 +34,14 @@ export class AuthService{
     }
     return {user:publicUser(user),csrf:session.csrf_token};
   }
-  async bootstrap(initialPassword){
+  async bootstrap(initialPassword,{username=defaultAdministratorUsername,displayName='Administrator'}={}){
     return transaction(this.pool,async db=>{
       await db.query('SELECT pg_advisory_xact_lock(20261102)');
       const existing=await db.query("SELECT id FROM users WHERE role = 'admin'");
       if(existing.rows.length)return {created:false};
+      const name=validateUsername(username),full=realName(displayName);
       const encoded=await hashPassword(initialPassword),id=randomUUID();
-      await db.query("INSERT INTO users(id,username,real_name,role,password_hash) VALUES($1,$2,$3,'admin',$4)",[id,'CTL LEE','Administrator',encoded]);
+      await db.query("INSERT INTO users(id,username,real_name,role,password_hash) VALUES($1,$2,$3,'admin',$4)",[id,name,full,encoded]);
       return {created:true};
     });
   }

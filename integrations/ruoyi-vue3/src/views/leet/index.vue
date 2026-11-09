@@ -159,7 +159,7 @@ onUnmounted(() => { activeRequest?.abort(); stateRequest?.abort(); clearInterval
 <template>
   <div v-if="dashboard" v-loading="busy" class="warehouse-shell">
     <aside class="warehouse-sidebar">
-      <div class="warehouse-brand"><b>LEE T<span class="brand-dot"></span></b><span>WAREHOUSE</span></div>
+      <div class="warehouse-brand"><img src="/brand/lee-t-logo.jpg" alt="LEE T" width="104" height="52"><span>WAREHOUSE</span></div>
       <p class="nav-caption">WORKSPACE</p>
       <el-menu :key="navEpoch" :default-active="section" @select="navigate">
         <el-menu-item v-for="(label, key) in navigation" :key="key" :index="key" :disabled="restricted && key !== 'backups'"><span>{{ label }}</span></el-menu-item>
@@ -206,7 +206,7 @@ onUnmounted(() => { activeRequest?.abort(); stateRequest?.abort(); clearInterval
     </div>
   </div>
   <main v-else class="welcome-shell" v-loading="busy">
-    <section class="welcome-story"><div class="warehouse-brand"><b>LEE T<span class="brand-dot"></span></b><span>WAREHOUSE</span></div><div><p class="eyebrow">LOCAL WAREHOUSE SYSTEM</p><h1>Warehouse<br>management.</h1><p>Products, stock and people in one workspace.</p></div><span class="welcome-footnote">LEE T Warehouse</span></section>
+    <section class="welcome-story"><div class="warehouse-brand"><img src="/brand/lee-t-logo.jpg" alt="LEE T" width="104" height="52"><span>WAREHOUSE</span></div><div><p class="eyebrow">LOCAL WAREHOUSE SYSTEM</p><h1>Warehouse<br>management.</h1><p>Products, stock and people in one workspace.</p></div><span class="welcome-footnote">LEE T Warehouse</span></section>
     <section class="welcome-form">
       <p class="eyebrow">ADMINISTRATOR WORKSPACE</p><h2>{{ needsLogin ? 'Welcome back.' : 'Warehouse connection' }}</h2>
       <p v-if="needsLogin" class="page-subtitle">Sign in to manage your warehouse.</p>
@@ -230,7 +230,7 @@ onUnmounted(() => { activeRequest?.abort(); stateRequest?.abort(); clearInterval
 .warehouse-shell,.welcome-shell { --el-color-primary:#245de9;--el-border-radius-base:8px;--el-font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-family:var(--el-font-family);color:#18273e; }
 .warehouse-shell { min-height:100vh;background:#f3f6fb;display:grid;grid-template-columns:228px minmax(0,1fr); }
 .warehouse-sidebar { position:sticky;top:0;height:100vh;max-height:100vh;overflow-y:auto;background:#fff;border-right:1px solid #e6ebf3;padding:34px 18px 24px;display:flex;flex-direction:column;min-height:100vh; }
-.warehouse-brand { display:flex;flex-direction:column;gap:7px;padding:0 16px; }.warehouse-brand b { font-size:30px;letter-spacing:-1.8px;color:#152b4d;display:flex;align-items:baseline;gap:7px; }.warehouse-brand>span { font-size:10px;letter-spacing:3px;color:#7b879c; }.brand-dot { width:7px;height:7px;border-radius:50%;background:#2bb69e;display:inline-block; }
+.warehouse-brand { display:flex;flex-direction:column;gap:7px;padding:0 16px; }.warehouse-brand img { display:block;object-fit:cover;border-radius:8px; }.warehouse-brand>span { font-size:10px;letter-spacing:3px;color:#7b879c; }
 .nav-caption { margin:48px 16px 12px;font-size:10px;letter-spacing:1.5px;color:#8c97aa;font-weight:600; }.warehouse-sidebar :deep(.el-menu) { border:0;background:transparent; }.warehouse-sidebar :deep(.el-menu-item) { height:46px;line-height:46px;border-radius:8px;margin:4px 0;color:#65738a;font-size:13px; }.warehouse-sidebar :deep(.el-menu-item.is-active) { background:#edf2ff;color:#245de9;font-weight:600; }.sidebar-footer { margin-top:auto;padding:40px 16px 0;font-size:12px;line-height:1.8;color:#a0aabc; }
 .warehouse-main { min-width:0; }.warehouse-topbar { height:76px;background:#fff;border-bottom:1px solid #e6ebf3;display:flex;align-items:center;justify-content:space-between;padding:0 34px;font-size:13px;font-weight:600; }.warehouse-topbar>div { display:flex;align-items:center;gap:22px; }.role-label { color:#8792a4;font-size:12px;font-weight:400; }.warehouse-content { padding:36px;max-width:1600px;margin:auto; }.warehouse-content>section:not(.surface) { background:#fff;border:1px solid #e6ebf3;border-radius:12px;padding:26px; }
 :deep(h1) { margin:0 0 14px;font-size:28px;font-weight:650;letter-spacing:-.8px;line-height:1.3; }:global(.el-table) { --el-table-header-bg-color:#f8faff;--el-table-border-color:#edf0f6;--el-table-header-text-color:#768297;--el-table-text-color:#46546d;font-size:12px; }:global(.el-table th.el-table__cell) { font-size:11px;font-weight:600;height:46px; }:global(.el-table td.el-table__cell) { padding:12px 0; }:deep(.el-alert) { margin:14px 0; }:deep(.el-dialog) { border-radius:12px; }:global(.el-button) { font-size:12px; }
