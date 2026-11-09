@@ -84,9 +84,12 @@ try{
  # Disable the bootstrap login after setup. The application has its own database owner.
  Invoke-LocalSql postgres postgres $adminSecret 'ALTER ROLE postgres NOLOGIN;' | Out-Null
  Set-Service -Name $ServiceName -StartupType Automatic
+ $connection=[UriBuilder]::new('postgresql','127.0.0.1',$Port,$appDatabase)
+ $connection.UserName=$appUser
+ $connection.Password=$appSecret
  [pscustomobject]@{
   ServiceName=$ServiceName
-  DatabaseUrl=('postgresql://'+$appUser+':'+$appSecret+'@127.0.0.1:'+ $Port +'/'+$appDatabase)
+  DatabaseUrl=$connection.Uri.AbsoluteUri
  }
 }catch{
  if($registered){

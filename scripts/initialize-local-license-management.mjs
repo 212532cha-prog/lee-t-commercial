@@ -9,13 +9,16 @@ import { initializeLicenseManagement } from '../src/commercial/license-managemen
 import { transaction } from '../src/db/database.mjs';
 
 let pool;
+let stage = 'input';
 try {
-  let input = '';
+  const chunks = [];
+  let length = 0;
   for await (const chunk of process.stdin) {
-    input += chunk;
-    if (input.length > 8192) throw Error('Setup input too large.');
+    length += chunk.length;
+    if (length > 8192) throw Error('Setup input too large.');
+    chunks.push(chunk);
   }
-  const { root, databaseUrl, port, pfxPassphrase, operatorPassword } = JSON.parse(input);
+  const { root, databaseUrl, port, pfxPassphrase, operatorPassword } = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
   const db = new URL(databaseUrl);
   if (db.protocol !== 'postgresql:' || db.hostname !== '127.0.0.1' ||
       db.username !== 'leet_license_app' || db.pathname !== '/leet_issuer' || db.search ||
@@ -23,10 +26,12 @@ try {
       typeof operatorPassword !== 'string' || operatorPassword.length < 12 || operatorPassword.length > 128) {
     throw Error('Invalid local setup.');
   }
+  stage = 'operator certificate';
   const fingerprint = new X509Certificate(await readFile(join(root, 'operator.cer'))).fingerprint256;
   const issuerKeyId = 'leet-local-' + randomUUID();
   const issuerKeyPath = join(root, 'issuer.key');
   const { privateKeyPem, publicKeyPem } = generateIssuerKeyPair();
+  stage = 'issuer database';
   pool = new pg.Pool({ connectionString: databaseUrl, connectionTimeoutMillis: 5000 });
   await transaction(pool, async client => {
     const { rows: [current] } = await client.query('SELECT current_database() AS name');
@@ -34,6 +39,7 @@ try {
     await initializeActivationLedger(client);
     await initializeLicenseManagement(client);
   });
+  stage = 'protected files';
   const writeNew = (name, content) => writeFile(join(root, name), content, { flag: 'wx', mode: 0o600 });
   await writeNew('issuer.key', privateKeyPem);
   await writeNew('issuer-public.pem', publicKeyPem);
@@ -46,7 +52,7 @@ try {
   }, null, 2));
   console.log('Local issuer ledger and configuration initialized.');
 } catch {
-  console.error('Local License Center initialization failed.');
+  console.error('Local License Center initialization failed at: ' + stage + '.');
   process.exitCode = 1;
 } finally {
   if (pool) await pool.end();

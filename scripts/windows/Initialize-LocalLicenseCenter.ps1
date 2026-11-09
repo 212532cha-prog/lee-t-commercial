@@ -60,9 +60,9 @@ try{
   $info.EnvironmentVariables.Remove($name)
  }
  $process=[Diagnostics.Process]::Start($info)
- $inputBytes=[Text.Encoding]::UTF8.GetBytes((@{root=$root;databaseUrl=$database.DatabaseUrl;port=$ManagementPort;pfxPassphrase=$pfxPassphrase;operatorPassword=$plain}|ConvertTo-Json -Compress))
- try{$process.StandardInput.BaseStream.Write($inputBytes,0,$inputBytes.Length)}finally{[Array]::Clear($inputBytes,0,$inputBytes.Length)}
- $process.StandardInput.Close()
+ $writer=[IO.StreamWriter]::new($process.StandardInput.BaseStream,[Text.UTF8Encoding]::new($false))
+ try{$writer.Write((@{root=$root;databaseUrl=$database.DatabaseUrl;port=$ManagementPort;pfxPassphrase=$pfxPassphrase;operatorPassword=$plain}|ConvertTo-Json -Compress))}
+ finally{$writer.Dispose()}
  $process.WaitForExit()
  if($process.ExitCode -ne 0){throw 'Could not initialize the local issuer database and configuration.'}
  Import-Certificate -FilePath $caPath -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
