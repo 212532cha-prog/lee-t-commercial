@@ -13,11 +13,12 @@ function reply(response, status, body) {
 }
 
 export function createActivationServer({ tls, pool, issuer, onError = () => {} }) {
-  if (!tls?.key || !tls.cert || !pool || !issuer?.privateKeyPem || !issuer.keyId) {
+  if ((!tls?.pfx && (!tls?.key || !tls.cert)) || !pool || !issuer?.privateKeyPem || !issuer.keyId) {
     throw Error('HTTPS, issuer and activation database configuration are required.');
   }
   validateActivationIssuer(issuer);
-  return createServer({ key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2', requestTimeout: 10000 }, async (request, response) => {
+  const credentials = tls.pfx ? { pfx: tls.pfx, passphrase: tls.passphrase } : { key: tls.key, cert: tls.cert };
+  return createServer({ ...credentials, minVersion: 'TLSv1.2', requestTimeout: 10000 }, async (request, response) => {
     if (request.url !== activationPath) return reply(response, 404, { error: 'NOT_FOUND' });
     if (request.method !== 'POST') {
       response.setHeader('Allow', 'POST');

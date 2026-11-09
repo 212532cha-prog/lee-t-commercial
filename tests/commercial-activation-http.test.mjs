@@ -29,15 +29,19 @@ test('online activation uses trusted HTTPS, stores a signed license and can then
   await initializeActivationLedger(pool);
   const tlsKey = join(directory, 'tls-key.pem');
   const tlsCert = join(directory, 'tls-cert.pem');
+  const tlsPfx = join(directory, 'tls.pfx');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', tlsKey, '-out', tlsCert,
     '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], { stdio: 'ignore' });
   const cert = await readFile(tlsCert);
+  const passphrase = 'isolated-test-pfx';
+  execFileSync('openssl', ['pkcs12', '-export', '-inkey', tlsKey, '-in', tlsCert, '-out', tlsPfx,
+    '-passout', 'pass:' + passphrase], { stdio: 'ignore' });
   const issuer = { ...generateIssuerKeyPair(), keyId: 'test-issuer' };
   const version = JSON.parse(await readFile(new URL('../package.json', import.meta.url))).version;
   const code = await createInitialActivationCode(pool, {
     customerId: 'customer-online', version, paid: true, expiresAt: new Date(Date.now() + 60000),
   });
-  server = createActivationServer({ tls: { key: await readFile(tlsKey), cert }, pool, issuer });
+  server = createActivationServer({ tls: { pfx: await readFile(tlsPfx), passphrase }, pool, issuer });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const settings = {

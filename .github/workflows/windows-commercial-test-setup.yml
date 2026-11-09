@@ -27,6 +27,11 @@ on:
       - 'scripts/windows/**'
       - '.github/workflows/windows-commercial-test-setup.yml'
   workflow_dispatch:
+    inputs:
+      online_qa_profile:
+        description: 'Public installer-profile.json from the isolated online QA issuer'
+        type: string
+        required: false
 
 # A new commit supersedes older checks on the same pull request.
 concurrency:
@@ -137,16 +142,61 @@ jobs:
           name: LeeT-Test-Setup
           path: ${{ runner.temp }}/leet-setup/LeeT-Test-Setup.exe
           if-no-files-found: error
-      - name: Compile Windows setup with embedded online activation settings
+      - name: Verify isolated issuer provisioning and trusted HTTPS on Windows
         shell: powershell
         run: |
+          $node = (Get-Command node.exe).Source
+          $postgres = Join-Path $env:ProgramFiles 'PostgreSQL\17'
+          $root = Join-Path $env:ProgramData 'Lee T Online Activation QA'
+          $issuer = $null
+          ./scripts/windows/Initialize-OnlineActivationQa.ps1 -NodePath $node -PostgresDirectory $postgres -Address '127.0.0.1'
+          $env:LEE_T_ACTIVATION_SERVICE_CONFIG = Join-Path $root 'service.private.json'
+          $settings = Get-Content -LiteralPath $env:LEE_T_ACTIVATION_SERVICE_CONFIG -Raw | ConvertFrom-Json
+          try {
+            $stdout = Join-Path $root 'stdout.log'
+            $issuer = Start-Process -FilePath $node -ArgumentList 'scripts/start-activation-service.mjs' -PassThru -RedirectStandardOutput $stdout -RedirectStandardError (Join-Path $root 'stderr.log')
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 100; $attempt++) {
+              if ($issuer.HasExited) { throw 'The isolated issuer exited before readiness.' }
+              if ((Get-Content -LiteralPath $stdout -Raw) -match 'activation service ready') { $ready = $true; break }
+              Start-Sleep -Milliseconds 150
+            }
+            if (-not $ready) { throw 'The isolated issuer did not start.' }
+            $env:NODE_EXTRA_CA_CERTS = Join-Path $root 'activation-ca.pem'
+            & $node --input-type=module -e 'const response=await fetch(process.argv[1]);if(response.status!==405)process.exitCode=1;' -- 'https://127.0.0.1:8445/v1/activation/redeem'
+            if ($LASTEXITCODE -ne 0) { throw 'The Windows PFX issuer failed its HTTPS trust probe.' }
+            Copy-Item -LiteralPath (Join-Path $root 'installer-profile.json') -Destination (Join-Path $env:RUNNER_TEMP 'leet-online-fixture-profile.json')
+          } finally {
+            if ($issuer -and -not $issuer.HasExited) { Stop-Process -Id $issuer.Id -Force; $issuer.WaitForExit() }
+            Stop-Service -Name $settings.databaseServiceName
+            & (Join-Path $postgres 'bin\pg_ctl.exe') unregister -N $settings.databaseServiceName | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'The isolated PostgreSQL service could not be removed.' }
+            Remove-Item -LiteralPath $root -Recurse -Force
+          }
+      - name: Compile Windows setup with embedded online activation settings
+        shell: powershell
+        env:
+          LEE_T_ONLINE_QA_PROFILE: ${{ inputs.online_qa_profile }}
+        run: |
+          if (-not $env:LEE_T_ONLINE_QA_PROFILE) {
+            $env:LEE_T_ONLINE_QA_PROFILE = Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'leet-online-fixture-profile.json') -Raw
+          }
+          $profile = Join-Path $env:RUNNER_TEMP 'leet-online-public-profile'
+          node scripts/prepare-online-qa-profile.mjs $profile
+          if ($LASTEXITCODE -ne 0) { throw 'The online QA build profile is invalid.' }
+          $settings = Get-Content -LiteralPath (Join-Path $profile 'build.json') -Raw | ConvertFrom-Json
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          $output = Join-Path $env:RUNNER_TEMP 'leet-online-compile-test'
           $payload = Join-Path $env:RUNNER_TEMP 'leet-payload'
-          $publicKey = Join-Path $env:RUNNER_TEMP 'leet-online-fixture-public.pem'
-          node --input-type=module -e 'import {generateKeyPairSync} from ''node:crypto'';import {writeFileSync} from ''node:fs'';const {publicKey}=generateKeyPairSync(''ed25519'');writeFileSync(process.argv[1],publicKey.export({type:''spki'',format:''pem''}));' -- $publicKey
-          if ($LASTEXITCODE -ne 0) { throw 'Online installer public key fixture failed.' }
-          & $compiler "/DPayloadDir=$payload" "/DBuildOutput=$output" "/DOnlineIssuerPublicKey=$publicKey" '/DOnlineIssuerKeyId=ci-online-fixture' '/DOnlineActivationEndpoint=https://activation.example.test/v1/activation/redeem' 'installer/windows/LeeT-Test-Setup.iss'
+          $output = Join-Path $env:RUNNER_TEMP 'leet-online-qa'
+          $publicKey = Join-Path $profile 'issuer-public.pem'
+          $caPath = Join-Path $profile 'activation-ca.pem'
+          & $compiler "/DPayloadDir=$payload" "/DBuildOutput=$output" "/DOnlineIssuerPublicKey=$publicKey" "/DOnlineActivationCa=$caPath" "/DOnlineIssuerKeyId=$($settings.issuerKeyId)" "/DOnlineActivationEndpoint=$($settings.endpoint)" 'installer/windows/LeeT-Test-Setup.iss'
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $output 'LeeT-Test-Setup.exe') -PathType Leaf)) {
             throw 'Windows setup with embedded activation settings failed to compile.'
           }
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.online_qa_profile != ''
+        with:
+          name: LeeT-Online-QA-Setup
+          path: ${{ runner.temp }}/leet-online-qa/LeeT-Test-Setup.exe
+          if-no-files-found: error

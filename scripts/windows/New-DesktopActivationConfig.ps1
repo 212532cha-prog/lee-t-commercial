@@ -6,6 +6,7 @@ param(
  [Parameter(Mandatory=$true)][string]$IssuerPublicKey,
  [Parameter(Mandatory=$true)][string]$IssuerKeyId,
  [string]$ActivationEndpoint,
+ [string]$ActivationCa,
  [switch]$Resume,
  [switch]$InstallerCache
 )
@@ -30,6 +31,16 @@ if($ActivationEndpoint){
     $endpoint.UserInfo -or $ActivationEndpoint.Contains('?') -or $ActivationEndpoint.Contains('#') -or
     $ActivationEndpoint -ne $ActivationEndpoint.Trim() -or $ActivationEndpoint.Length -gt 2048){throw 'Activation requires the publisher HTTPS endpoint.'}
 }
+if($ActivationCa){
+ if(-not $ActivationEndpoint -or -not (Test-Path -LiteralPath $ActivationCa -PathType Leaf)){throw 'A test CA requires the publisher HTTPS endpoint and a certificate file.'}
+ $caText=[IO.File]::ReadAllText((Resolve-Path -LiteralPath $ActivationCa).Path)
+ if($caText.Length -gt 16384 -or $caText -cnotmatch '\A-----BEGIN CERTIFICATE-----\r?\n([A-Za-z0-9+/=\r\n]+)-----END CERTIFICATE-----\r?\n?\z'){throw 'Use one PEM activation CA certificate.'}
+ $certificate=[Security.Cryptography.X509Certificates.X509Certificate2]::new([Convert]::FromBase64String($Matches[1]))
+ try{
+  $constraints=$certificate.Extensions | Where-Object {$_ -is [Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]}
+  if(-not $constraints -or -not $constraints.CertificateAuthority){throw 'The activation certificate must be a CA.'}
+ }finally{$certificate.Dispose()}
+}
 $desktop=Join-Path $payload 'desktop'
 $config=Join-Path $desktop 'activation.private.json'
 $trust=Join-Path $payload 'publisher'
@@ -39,6 +50,7 @@ if($InstallerCache){
  $savedConfig=Join-Path $trust 'setup.private.json'
 }
 $publicKey=Join-Path $trust 'issuer-public.pem'
+$caFile=Join-Path $trust 'activation-ca.pem'
 if(Test-Path -LiteralPath (Join-Path $payload 'app\activation')){throw 'Activation setup already exists. Preserve it for the repair workflow.'}
 $environment=@{
  LEE_T_LICENSE_DIR=$licensePath
@@ -46,6 +58,7 @@ $environment=@{
  LEE_T_ISSUER_KEY_ID=$IssuerKeyId
 }
 if($ActivationEndpoint){$environment.LEE_T_ACTIVATION_ENDPOINT=$ActivationEndpoint}
+if($ActivationCa){$environment.LEE_T_ACTIVATION_CA_PATH=$caFile}
 $resuming=($Resume -or $InstallerCache) -and (Test-Path -LiteralPath $savedConfig -PathType Leaf)
 if($resuming){
  $trustedWriters=@('S-1-5-32-544','S-1-5-18')
@@ -53,6 +66,7 @@ if($resuming){
  if(-not (Test-Path -LiteralPath $licensePath -PathType Container)){throw 'The original activation directory is missing.'}
  $activationFiles=@(Get-ChildItem -LiteralPath $licensePath -Force)
  $protectedPaths=@($savedConfig,$trust,$publicKey,$licensePath)
+ if($ActivationCa){$protectedPaths+=$caFile}
  if(-not $InstallerCache){$protectedPaths+=$desktop}
  foreach($item in @((Get-Item -LiteralPath $protectedPaths))+$activationFiles){
   if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Activation setup cannot use linked files or directories.'}
@@ -66,6 +80,7 @@ if($resuming){
  }
  $allowedFiles=@('installation-id','license.json')
  if($InstallerCache){$allowedFiles+=@('issuer-public.pem','setup.private.json')}
+ if($InstallerCache -and $ActivationCa){$allowedFiles+='activation-ca.pem'}
  if(@($activationFiles | Where-Object {$_.PSIsContainer -or $_.Name -cnotin $allowedFiles}).Count){
   throw 'Existing activation data requires repair.'
  }
@@ -77,11 +92,14 @@ if($resuming){
  if((Get-FileHash -LiteralPath $publicKey).Hash -ne (Get-FileHash -LiteralPath $IssuerPublicKey).Hash){
   throw 'The issuer public key does not match the original activation setup.'
  }
+ if($ActivationCa -and [IO.File]::ReadAllText($caFile) -cne $caText){
+  throw 'The activation CA does not match the original activation setup.'
+ }
  Write-Output 'Existing protected LEE T activation setup preserved.'
  if(-not $InstallerCache){return}
 }
 if(-not $resuming -and (Test-Path -LiteralPath $licensePath) -and @(Get-ChildItem -LiteralPath $licensePath -Force).Count){throw 'Existing activation data was found. Preserve it for repair or migration.'}
-if((Test-Path -LiteralPath $config) -or (-not $resuming -and (Test-Path -LiteralPath $publicKey))){throw 'Activation setup already exists. Preserve it for the repair workflow.'}
+if((Test-Path -LiteralPath $config) -or (-not $resuming -and ((Test-Path -LiteralPath $publicKey) -or (Test-Path -LiteralPath $caFile)))){throw 'Activation setup already exists. Preserve it for the repair workflow.'}
 foreach($path in @((Join-Path $payload 'runtime\node.exe'),(Join-Path $payload 'app\scripts\desktop-activation.mjs'),(Join-Path $desktop 'LeeT.Warehouse.exe'))){
  if(-not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'The complete desktop payload is required.'}
 }
@@ -125,6 +143,10 @@ if(-not $resuming){
  Set-Acl -LiteralPath $licensePath -AclObject $licenseSecurity
  Copy-Item -LiteralPath $IssuerPublicKey -Destination $publicKey
  Set-ActivationFileAccess $publicKey
+ if($ActivationCa){
+  [IO.File]::WriteAllText($caFile,$caText,$utf8)
+  Set-ActivationFileAccess $caFile
+ }
  if($InstallerCache){
   [IO.File]::WriteAllText($savedConfig,$settings,$utf8)
   Set-ActivationFileAccess $savedConfig -Private

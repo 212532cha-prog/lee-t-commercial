@@ -17,6 +17,7 @@ internal sealed class ActivationBridge(string node, string script, string config
 {
     private readonly SemaphoreSlim gate = new(1, 1);
     private string[] exportBlocked = [];
+    private string? activationCa;
     internal static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     internal static ActivationBridge Installed(string desktopDirectory)
@@ -30,14 +31,23 @@ internal sealed class ActivationBridge(string node, string script, string config
         foreach (var path in new[] { config, node, script }) RequireProtectedFile(path);
         using var document = JsonDocument.Parse(File.ReadAllText(config, StrictUtf8));
         var values = document.RootElement.GetProperty("Environment");
-        var allowed = new[] { "LEE_T_LICENSE_DIR", "LEE_T_ISSUER_PUBLIC_KEY_PATH", "LEE_T_ISSUER_KEY_ID", "LEE_T_ACTIVATION_ENDPOINT" };
+        var allowed = new[] { "LEE_T_LICENSE_DIR", "LEE_T_ISSUER_PUBLIC_KEY_PATH", "LEE_T_ISSUER_KEY_ID", "LEE_T_ACTIVATION_ENDPOINT", "LEE_T_ACTIVATION_CA_PATH" };
         if (values.ValueKind != JsonValueKind.Object || values.EnumerateObject().Any(p =>
             !allowed.Contains(p.Name) || p.Value.ValueKind != JsonValueKind.String)) throw new InvalidOperationException("SETUP_REQUIRED");
         if (!Path.IsPathFullyQualified(values.GetProperty("LEE_T_LICENSE_DIR").GetString()!)) throw new InvalidOperationException("SETUP_REQUIRED");
         RequireProtectedFile(values.GetProperty("LEE_T_ISSUER_PUBLIC_KEY_PATH").GetString()!);
         if (string.IsNullOrWhiteSpace(values.GetProperty("LEE_T_ISSUER_KEY_ID").GetString())) throw new InvalidOperationException("SETUP_REQUIRED");
+        string? ca = null;
+        if (values.TryGetProperty("LEE_T_ACTIVATION_CA_PATH", out var caPath))
+        {
+            ca = caPath.GetString()!;
+            if (!values.TryGetProperty("LEE_T_ACTIVATION_ENDPOINT", out _) || !Path.IsPathFullyQualified(ca))
+                throw new InvalidOperationException("SETUP_REQUIRED");
+            RequireProtectedFile(ca);
+        }
         return new(node, script, config, TimeSpan.FromSeconds(60))
         {
+            activationCa = ca,
             exportBlocked = [root, Path.GetFullPath(values.GetProperty("LEE_T_LICENSE_DIR").GetString()!)],
         };
     }
@@ -88,6 +98,7 @@ internal sealed class ActivationBridge(string node, string script, string config
                 if (Environment.GetEnvironmentVariable(name) is { } value) start.Environment[name] = value;
             start.Environment["PATH"] = Environment.SystemDirectory;
             start.Environment["WAREHOUSE_CONFIG_PATH"] = configuration;
+            if (activationCa is not null) start.Environment["NODE_EXTRA_CA_CERTS"] = activationCa;
             process.StartInfo = start;
             if (!process.Start()) throw new InvalidOperationException("ACTIVATION_FAILED");
             started = true;

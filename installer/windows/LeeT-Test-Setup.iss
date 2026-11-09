@@ -12,7 +12,7 @@
     #error Provide OnlineIssuerKeyId with OnlineActivationEndpoint
   #endif
 #else
-  #if defined(OnlineIssuerPublicKey) || defined(OnlineIssuerKeyId)
+  #if defined(OnlineIssuerPublicKey) || defined(OnlineIssuerKeyId) || defined(OnlineActivationCa)
     #error Provide OnlineActivationEndpoint with the online issuer settings
   #endif
 #endif
@@ -36,6 +36,9 @@ SolidCompression=yes
 [Files]
 #ifdef OnlineActivationEndpoint
 Source: "{#OnlineIssuerPublicKey}"; DestDir: "{tmp}\activation"; DestName: "online-issuer-public.pem"; Flags: dontcopy
+#endif
+#ifdef OnlineActivationCa
+Source: "{#OnlineActivationCa}"; DestDir: "{tmp}\activation"; DestName: "online-activation-ca.pem"; Flags: dontcopy
 #endif
 Source: "{#PayloadDir}\desktop\*"; DestDir: "{tmp}\activation\desktop"; Flags: dontcopy recursesubdirs
 Source: "{#PayloadDir}\runtime\node.exe"; DestDir: "{tmp}\activation\runtime"; Flags: dontcopy
@@ -123,6 +126,9 @@ begin
     ' -IssuerKeyId ' + AddQuotes(InstallIssuerKeyId) + ' -InstallerCache';
 #ifdef OnlineActivationEndpoint
   Arguments := Arguments + ' -ActivationEndpoint ' + AddQuotes('{#OnlineActivationEndpoint}');
+#endif
+#ifdef OnlineActivationCa
+  Arguments := Arguments + ' -ActivationCa ' + AddQuotes(AddBackslash(Bootstrap) + 'online-activation-ca.pem');
 #endif
   if not Exec(PowerShell, Arguments, Bootstrap, SW_HIDE, ewWaitUntilTerminated, ExitCode) then Exit;
   if ExitCode <> 0 then begin

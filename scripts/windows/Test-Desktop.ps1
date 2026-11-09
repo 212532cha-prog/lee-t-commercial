@@ -39,6 +39,11 @@ try {
   IssuerKeyId='desktop-ui-test'
   ActivationEndpoint='https://activation.example.test/redeem'
  }
+ $caPath=Join-Path $activationRoot 'qa-activation-ca.pem'
+ $caData=[IO.File]::ReadAllBytes($certificate.RootCertificate)
+ $caPem="-----BEGIN CERTIFICATE-----`n"+[Convert]::ToBase64String($caData,[Base64FormattingOptions]::InsertLineBreaks)+"`n-----END CERTIFICATE-----`n"
+ [IO.File]::WriteAllText($caPath,$caPem,[Text.UTF8Encoding]::new($false))
+ $activationSettings.ActivationCa=$caPath
  $prepareActivation=Join-Path $PSScriptRoot 'New-DesktopActivationConfig.ps1'
  & $prepareActivation @activationSettings
  $identityPath=Join-Path $activationSettings.LicenseDirectory 'installation-id'
@@ -75,7 +80,8 @@ try {
   & $prepareActivation @activationSettings -InstallerCache
   $bootConfig=Get-Content -LiteralPath (Join-Path $bootstrap 'desktop\activation.private.json') -Raw -Encoding UTF8 | ConvertFrom-Json
   if($bootConfig.Environment.LEE_T_LICENSE_DIR -cne $cache -or
-     $bootConfig.Environment.LEE_T_ISSUER_PUBLIC_KEY_PATH -cne (Join-Path $cache 'issuer-public.pem')){
+     $bootConfig.Environment.LEE_T_ISSUER_PUBLIC_KEY_PATH -cne (Join-Path $cache 'issuer-public.pem') -or
+     $bootConfig.Environment.LEE_T_ACTIVATION_CA_PATH -cne (Join-Path $cache 'activation-ca.pem')){
    throw 'Installer bootstrap did not use the protected cache.'
   }
   if($run -eq 0){
