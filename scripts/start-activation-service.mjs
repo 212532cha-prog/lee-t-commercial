@@ -11,14 +11,15 @@ try {
   if (!settings.databaseUrl || !settings.issuerKeyId) throw Error('Missing activation service configuration.');
   const port = Number(settings.port ?? 8443);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw Error('Invalid activation service port.');
-  const [key, cert, privateKeyPem] = await Promise.all([
-    readFile(settings.tlsKeyPath), readFile(settings.tlsCertPath), readFile(settings.issuerKeyPath, 'utf8'),
-  ]);
+  const tls = settings.tlsPfxPath
+    ? { pfx: await readFile(settings.tlsPfxPath), passphrase: settings.tlsPfxPassphrase }
+    : { key: await readFile(settings.tlsKeyPath), cert: await readFile(settings.tlsCertPath) };
+  const privateKeyPem = await readFile(settings.issuerKeyPath, 'utf8');
   pool = new pg.Pool({ connectionString: settings.databaseUrl, connectionTimeoutMillis: 5000 });
   await initializeActivationLedger(pool);
   await initializeLicenseManagement(pool);
   const server = createActivationServer({
-    pool, tls: { key, cert }, issuer: { privateKeyPem, keyId: settings.issuerKeyId },
+    pool, tls, issuer: { privateKeyPem, keyId: settings.issuerKeyId },
     onError: () => console.error('Activation redemption failed.'),
   });
   server.on('error', async () => {
