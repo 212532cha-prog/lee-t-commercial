@@ -64,8 +64,13 @@ const publicKeyPem=readFileSync(publicKeyPath,'utf8');
 if(!verifyLicense({license,request,publicKeyPem,runningVersion:'0.8.5'}).valid)process.exitCode=1;
 '@
  $verification=@{license=$signed;request=$request;publicKeyPath=(Join-Path $root 'issuer-public.pem')}|ConvertTo-Json -Depth 10 -Compress
- $verification | & $node --input-type=module -e $signatureCheck
- if($LASTEXITCODE -ne 0){throw 'The generated publisher key did not verify the signed license.'}
+ # Windows PowerShell can prepend a BOM when piping JSON to a native command.
+ $previousOutputEncoding=$OutputEncoding
+ try{
+  $OutputEncoding=[Text.UTF8Encoding]::new($false)
+  $verification | & $node --input-type=module -e $signatureCheck
+  if($LASTEXITCODE -ne 0){throw 'The generated publisher key did not verify the signed license.'}
+ }finally{$OutputEncoding=$previousOutputEncoding}
  Write-Output 'Windows local issuer setup, TLS operator login, paid signing and exact retry passed.'
 }finally{
  $databaseListener.Stop()
