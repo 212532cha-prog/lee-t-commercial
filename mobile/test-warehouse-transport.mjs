@@ -15,7 +15,7 @@ import { createStockRoutes } from '../src/stock/routes.mjs';
 import { CountService } from '../src/count/service.mjs';
 import { createCountRoutes } from '../src/count/routes.mjs';
 
-export async function testWarehouseTransport({ harness, cert, key, pin }) {
+export async function testWarehouseTransport({ classesDirectory, cert, key, pin }) {
   const { pool, engine } = await testPool();
   let server, reserved, client, lines, closed;
   try {
@@ -47,7 +47,7 @@ export async function testWarehouseTransport({ harness, cert, key, pin }) {
     await new Promise(resolve => reserved.close(resolve));
     server.listen(port, '127.0.0.1');
     await once(server, 'listening');
-    client = spawn('java', ['-Dsun.net.http.allowRestrictedHeaders=true', harness, origin, pin, 'warehouse'],
+    client = spawn('java', ['-Dsun.net.http.allowRestrictedHeaders=true', '-cp', classesDirectory, 'my.leet.warehouse.ProbeHarness', origin, pin, 'warehouse'],
       { stdio: ['pipe', 'pipe', 'inherit'], timeout: 25000 });
     closed = once(client, 'exit');
     lines = createInterface({ input: client.stdout });

@@ -12,6 +12,7 @@ import Stock from './Stock.vue'
 import { createDashboardClient, formatCost } from './dashboard-api.mjs'
 import { loadWarehouseDashboard, createAdminTransport } from './warehouse-api.mjs'
 
+const brandLogo = '/brand/lee-t-logo.jpg'
 const api = createAdminTransport()
 const dashboardApi = createDashboardClient()
 const marking = ref(false)
@@ -159,7 +160,7 @@ onUnmounted(() => { activeRequest?.abort(); stateRequest?.abort(); clearInterval
 <template>
   <div v-if="dashboard" v-loading="busy" class="warehouse-shell">
     <aside class="warehouse-sidebar">
-      <div class="warehouse-brand"><img src="/brand/lee-t-logo.jpg" alt="LEE T" width="104" height="52"><span>WAREHOUSE</span></div>
+      <div class="warehouse-brand"><img :src="brandLogo" alt="LEE T" width="104" height="52"><span>WAREHOUSE</span></div>
       <p class="nav-caption">WORKSPACE</p>
       <el-menu :key="navEpoch" :default-active="section" @select="navigate">
         <el-menu-item v-for="(label, key) in navigation" :key="key" :index="key" :disabled="restricted && key !== 'backups'"><span>{{ label }}</span></el-menu-item>
@@ -206,7 +207,7 @@ onUnmounted(() => { activeRequest?.abort(); stateRequest?.abort(); clearInterval
     </div>
   </div>
   <main v-else class="welcome-shell" v-loading="busy">
-    <section class="welcome-story"><div class="warehouse-brand"><img src="/brand/lee-t-logo.jpg" alt="LEE T" width="104" height="52"><span>WAREHOUSE</span></div><div><p class="eyebrow">LOCAL WAREHOUSE SYSTEM</p><h1>Warehouse<br>management.</h1><p>Products, stock and people in one workspace.</p></div><span class="welcome-footnote">LEE T Warehouse</span></section>
+    <section class="welcome-story"><div class="warehouse-brand"><img :src="brandLogo" alt="LEE T" width="104" height="52"><span>WAREHOUSE</span></div><div><p class="eyebrow">LOCAL WAREHOUSE SYSTEM</p><h1>Warehouse<br>management.</h1><p>Products, stock and people in one workspace.</p></div><span class="welcome-footnote">LEE T Warehouse</span></section>
     <section class="welcome-form">
       <p class="eyebrow">ADMINISTRATOR WORKSPACE</p><h2>{{ needsLogin ? 'Welcome back.' : 'Warehouse connection' }}</h2>
       <p v-if="needsLogin" class="page-subtitle">Sign in to manage your warehouse.</p>
