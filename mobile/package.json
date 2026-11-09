@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild app.mjs --bundle --outfile=dist/app.js --format=esm && node -e \"for (const file of ['index.html','pairing.css']) require('node:fs').copyFileSync(file,'dist/'+file)\"",
+    "build": "esbuild app.mjs --bundle --outfile=dist/app.js --format=esm && node -e \"for (const file of ['index.html','pairing.css']) require('node:fs').copyFileSync(file,'dist/'+file); require('node:fs').copyFileSync('../public/brand/lee-t-logo.jpg','dist/lee-t-logo.jpg')\"",
     "android:prepare": "npm run build && node prepare-android.mjs"
   },
   "dependencies": {

@@ -143,9 +143,11 @@ try {
   const transportImports = transport.slice(0, split).split('\n').filter(line => line.startsWith('import '));
   const source = implementation.replace('import java.io.ByteArrayOutputStream;', transportImports.join('\n'));
   await writeFile(harness, (source + '\n' + transport.slice(split)).replace('final class WarehouseIdentityProbe', harnessSource + '\nfinal class WarehouseIdentityProbe'));
+  await run('javac', ['-d', root, harness], { timeout: 30000 });
+  const java = ['-cp', root, 'my.leet.warehouse.ProbeHarness'];
   const url = `https://localhost:${server.address().port}/api/commercial/server-identity`;
   const probe = (address, fingerprint) =>
-    run('java', [harness, address, fingerprint], { timeout: 10000 });
+    run('java', [...java, address, fingerprint], { timeout: 10000 });
   assert.equal((await probe(url, pin)).stdout.trim(), '200:{"schema":1}');
   await assert.rejects(probe(url, '0'.repeat(64)), { stderr: /does not match the pairing code/ });
   await assert.rejects(probe(url.replace('localhost', '127.0.0.1'), pin), { stderr: /subject alternative|No name matching/i });
@@ -157,23 +159,23 @@ try {
   const origin = new URL(url.replace('localhost', 'warehouse.example')).origin;
   redirect = false;
   const routeProbe = (host, fingerprint) => run('java', [
-    harness, url.replace('localhost', host), fingerprint, '127.0.0.1',
+    ...java, url.replace('localhost', host), fingerprint, '127.0.0.1',
   ], { timeout: 10000 });
   assert.equal((await routeProbe('warehouse.example', pin)).stdout.trim(), '200:{"schema":1}');
   await assert.rejects(routeProbe('other.example', pin), { stderr: /does not match the original host/ });
-  const output = (await run('java', ['-Dsun.net.http.allowRestrictedHeaders=true', harness, origin, pin, 'api', '127.0.0.1'], { timeout: 10000 })).stdout.trim().split('\n');
+  const output = (await run('java', ['-Dsun.net.http.allowRestrictedHeaders=true', ...java, origin, pin, 'api', '127.0.0.1'], { timeout: 10000 })).stdout.trim().split('\n');
   assert.deepEqual(output, [
     '200:{"csrf":"fixture-csrf"}', '409:{"error":"STOCK_CHANGED"}',
     '{"ready":true}', '{"active":true}', 'Warehouse API redirects are disabled',
     'Invalid warehouse API path', 'Invalid warehouse API path', '{"device":true}',
   ]);
-  await assert.rejects(run('java', ['-Dsun.net.http.allowRestrictedHeaders=true', harness, origin, '0'.repeat(64), 'api', '127.0.0.1'], { timeout: 10000 }),
+  await assert.rejects(run('java', ['-Dsun.net.http.allowRestrictedHeaders=true', ...java, origin, '0'.repeat(64), 'api', '127.0.0.1'], { timeout: 10000 }),
     { stderr: /does not match the pairing code/ });
   assert.deepEqual(received, ['/api/auth/login', '/api/stock/requests', '/api/count/events?run=fixture', '/api/stock/redirect', '/api/auth/device']);
   console.log('Android pinned transport verified identity, login cookies, stock errors, count events and redirect rejection.');
   if (process.argv.includes('--warehouse')) {
     const { testWarehouseTransport } = await import('./test-warehouse-transport.mjs');
-    await testWarehouseTransport({ harness, cert, pin, key: await readFile(join(root, 'key.pem')) });
+    await testWarehouseTransport({ classesDirectory: root, cert, pin, key: await readFile(join(root, 'key.pem')) });
   }
 
 } finally {

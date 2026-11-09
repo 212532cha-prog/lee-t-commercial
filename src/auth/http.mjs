@@ -33,6 +33,7 @@ export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=
     req.headers.host===localAuthority&&req.headers.origin==='https://'+localAuthority;
    if(write&&!origins.has(req.headers.origin)&&!localWrite)throw new AuthError('ORIGIN_REJECTED',403);
    if(ruoyiAdmin&&await ruoyiAdmin(req,res,url))return;
+   if(req.method==='GET'&&url==='/brand/lee-t-logo.jpg'){res.writeHead(200,{'Content-Type':'image/jpeg'});res.end(readFileSync(new URL('../../public/brand/lee-t-logo.jpg',import.meta.url)));return;}
    if(req.method==='GET'&&url==='/fonts/business-regular.woff2'){res.writeHead(200,{'Content-Type':'font/woff2','Cache-Control':'public, max-age=86400'});res.end(readFileSync(new URL('../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2',import.meta.url)));return;}
    if(req.method==='GET'&&url==='/vendor/jsqr.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(readFileSync(new URL('../../node_modules/jsqr/dist/jsQR.js',import.meta.url)));return;}
    if(req.method==='GET'&&assets.has(url)){const [name,type]=assets.get(url);res.writeHead(200,{'Content-Type':type});res.end(readFileSync(new URL('../../public/app/'+name,import.meta.url)));return;}
