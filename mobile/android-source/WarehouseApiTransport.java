@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.CookieHandler;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -18,6 +19,13 @@ final class WarehouseApiTransport {
     private final String route;
     private volatile String sessionToken;
     private volatile String deviceToken;
+
+    static void useNativeCookieOwnership() {
+        // Capacitor installs a process-wide WebView cookie handler even with its
+        // JavaScript cookie plugin disabled. It can append a second session
+        // cookie to the explicit header below, which the server rejects.
+        CookieHandler.setDefault(null);
+    }
 
     WarehouseApiTransport(String origin, String fingerprint, String route) throws Exception {
         this.route = route;

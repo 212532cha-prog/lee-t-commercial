@@ -8,5 +8,6 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(WarehouseWorkspacePlugin.class);
         super.onCreate(savedInstanceState);
+        WarehouseApiTransport.useNativeCookieOwnership();
     }
 }
