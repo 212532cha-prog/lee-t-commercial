@@ -6,6 +6,8 @@ on:
       - 'src/commercial/**'
       - 'src/db/database.mjs'
       - 'scripts/test-edge-activation.mjs'
+      - 'scripts/test-license-provision.mjs'
+      - 'scripts/provision-license-center.mjs'
       - 'scripts/build-license-edge.mjs'
       - 'package-lock.json'
       - '.github/workflows/license-center-edge.yml'
@@ -16,6 +18,8 @@ on:
       - 'src/commercial/**'
       - 'src/db/database.mjs'
       - 'scripts/test-edge-activation.mjs'
+      - 'scripts/test-license-provision.mjs'
+      - 'scripts/provision-license-center.mjs'
       - 'scripts/build-license-edge.mjs'
       - 'package-lock.json'
       - '.github/workflows/license-center-edge.yml'
@@ -78,6 +82,8 @@ jobs:
           echo "LEE_T_EDGE_TEST_CA=$RUNNER_TEMP/edge-db-cert.pem" >> "$GITHUB_ENV"
       - name: Exercise real Deno HTTP and PostgreSQL with verified TLS
         run: LEE_T_EDGE_TEST_BUNDLE="${{ runner.temp }}/license-edge/lee-t-activation.mjs" deno run --allow-env --allow-read --allow-net --allow-run --config integrations/license-center/deno.json scripts/test-edge-activation.mjs
+      - name: Exercise fresh issuer provisioning and restricted runtime roles
+        run: node scripts/test-license-provision.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: LEE-T-activation-edge-candidate

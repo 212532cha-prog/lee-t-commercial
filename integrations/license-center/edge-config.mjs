@@ -1,5 +1,5 @@
 export function issuerPoolOptions(environment){
- const input=environment.LEE_T_ISSUER_DATABASE_URL||environment.SUPABASE_DB_URL;
+ const input=environment.LEE_T_ISSUER_DATABASE_URL;
  let url;try{url=new URL(input);}catch{throw Error('ISSUER_DATABASE_CONFIGURATION_REQUIRED');}
  if(!['postgres:','postgresql:'].includes(url.protocol)||!url.hostname||!url.username||!url.password)throw Error('ISSUER_DATABASE_CONFIGURATION_REQUIRED');
  // Connection-string options must never disable TLS or choose a different schema.
