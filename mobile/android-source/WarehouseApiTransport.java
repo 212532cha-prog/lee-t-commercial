@@ -43,6 +43,10 @@ final class WarehouseApiTransport {
         return deviceToken;
     }
 
+    boolean hasSession() {
+        return sessionToken != null;
+    }
+
     private static boolean validToken(String token) {
         return token != null && token.matches("[A-Za-z0-9_-]{43}");
     }
