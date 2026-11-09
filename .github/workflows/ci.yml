@@ -105,6 +105,11 @@ jobs:
       - name: Windows native PostgreSQL application start and restart
         shell: powershell
         run: ./scripts/windows/Test-NativeRuntime.ps1
+      - name: Verify separate Windows warehouse and issuer database provisioning
+        shell: powershell
+        run: |
+          ./scripts/windows/Test-CommercialPostgres.ps1
+          ./scripts/windows/Test-LocalLicenseCenter.ps1
 
   candidate-package:
     needs: [test, windows-service]

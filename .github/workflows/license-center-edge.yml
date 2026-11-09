@@ -49,9 +49,10 @@ jobs:
         with:
           node-version: '24'
       - run: npm ci --ignore-scripts
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: '2.9.6'
+      - name: Install pinned Deno from the official npm distribution
+        run: |
+          npm install --prefix "$RUNNER_TEMP/lee-t-deno" --no-save --no-audit --no-fund deno@2.9.6
+          echo "$RUNNER_TEMP/lee-t-deno/node_modules/.bin" >> "$GITHUB_PATH"
       - name: Check the npm-lock-backed Deno dependency graph
         run: deno check --config integrations/license-center/deno.json integrations/license-center/serve.mjs
       - name: Build standalone deployment bundle from locked npm dependencies

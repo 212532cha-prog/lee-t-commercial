@@ -3,8 +3,9 @@ import { readFile } from 'node:fs/promises';
 import { verify } from '@node-rs/argon2';
 import {
   confirmLicensePayment, issuePaidActivation, listLicenseAudit, listLicenseCustomers,
-  listLicensePayments, registerLicenseCustomer,
+  listLicensePayments, registerLicenseCustomer, signPaidOfflineLicense,
 } from './license-management.mjs';
+import { validateActivationIssuer } from './activation-fetch.mjs';
 
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const routes = new Map([
@@ -47,10 +48,15 @@ async function jsonBody(req) {
   }
 }
 
-export function createManagementServer({ tls, origin, operators, pool, onError = () => {} }) {
-  if (!tls?.key || !tls.cert || !tls.ca || !pool || !Array.isArray(operators) || !operators.length ||
+export function createManagementServer({ tls, origin, operators, pool, offlineIssuer, onError = () => {} }) {
+  if (!(tls?.pfx || (tls?.key && tls.cert)) || !tls.ca || !pool || !Array.isArray(operators) || !operators.length ||
       new URL(origin).protocol !== 'https:' || new URL(origin).origin !== origin) {
     throw Error('Management requires an HTTPS origin, client CA, database and operator configuration.');
+  }
+  const managementRoutes = new Map(routes);
+  if (offlineIssuer) {
+    validateActivationIssuer(offlineIssuer);
+    managementRoutes.set('POST /api/sign-offline', (db, actor, input) => signPaidOfflineLicense(db, actor, input, offlineIssuer));
   }
   const grants = new Map();
   for (const operator of operators) {
@@ -64,7 +70,7 @@ export function createManagementServer({ tls, origin, operators, pool, onError =
     grants.set(fingerprint, { operator: { id, role, customerId }, passwordHash, attempts: [] });
   }
   return createServer({
-    key: tls.key, cert: tls.cert, ca: tls.ca, requestCert: true, rejectUnauthorized: true,
+    ...tls, requestCert: true, rejectUnauthorized: true,
     minVersion: 'TLSv1.2', requestTimeout: 10000,
   }, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -100,16 +106,17 @@ export function createManagementServer({ tls, origin, operators, pool, onError =
         const [name, mime] = assets.get(url.pathname);
         return reply(res, 200, await readFile(new URL('./management-ui/' + name, import.meta.url)), mime);
       }
-      const handler = routes.get(req.method + ' ' + url.pathname);
+      const handler = managementRoutes.get(req.method + ' ' + url.pathname);
       if (!handler) throw error(404, 'NOT_FOUND');
       if (req.method === 'POST' && req.headers.origin !== origin) throw error(403, 'ORIGIN_REJECTED');
       const input = req.method === 'POST' ? await jsonBody(req) : { customerId: url.searchParams.get('customerId') };
       if ((url.pathname !== '/api/customers' && !uuid.test(input.customerId ?? '')) ||
-          (url.pathname === '/api/issue' && !uuid.test(input.paymentId ?? ''))) throw error(400, 'INVALID_ID');
+          (['/api/issue', '/api/sign-offline'].includes(url.pathname) && !uuid.test(input.paymentId ?? ''))) throw error(400, 'INVALID_ID');
       try {
         return reply(res, req.method === 'POST' ? 201 : 200, await handler(pool, grant.operator, input));
       } catch (cause) {
         if (cause.code === '23505') throw error(409, 'DUPLICATE_RECORD');
+        if (cause.code === 'INVALID_ACTIVATION_CODE') throw error(409, 'LICENSE_REQUEST_CONFLICT');
         if (cause.code) throw cause;
         if (/access denied|role required/.test(cause.message)) throw error(403, 'OPERATOR_FORBIDDEN');
         if (/already has|already pending|already associated/.test(cause.message)) throw error(409, 'ISSUANCE_CONFLICT');
