@@ -1,6 +1,7 @@
 package my.leet.warehouse;
 
 import android.util.AtomicFile;
+import android.content.pm.ApplicationInfo;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
@@ -26,6 +27,24 @@ public final class PinnedWorkspace {
     private final ExecutorService eventThread = Executors.newSingleThreadExecutor();
     private final Map<String, EventJob> streams = new ConcurrentHashMap<>();
     private volatile boolean closed;
+    private volatile String loginDiagnostic = "";
+    private volatile String stateDiagnostic = "";
+
+    @JavascriptInterface
+    public String signInDiagnostic() {
+        return loginDiagnostic + stateDiagnostic;
+    }
+
+    private void recordSignIn(String path, int status, String storage) {
+        if ((view.getContext().getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) == 0) return;
+        if ("/api/auth/login".equals(path)) {
+            stateDiagnostic = "";
+            loginDiagnostic = "QA login=" + status + " device=" + storage +
+                " session=" + (transport.hasSession() ? "present" : "missing");
+        } else if ("/api/state".equals(path) && !loginDiagnostic.isEmpty()) {
+            stateDiagnostic = " state=" + status;
+        }
+    }
 
     PinnedWorkspace(WebView view, String origin, String fingerprint, String route) throws Exception {
         this.view = view;
@@ -66,14 +85,19 @@ public final class PinnedWorkspace {
         requests.execute(() -> {
             try {
                 WarehouseIdentityProbe.Response response = transport.request(method, path, body, csrf);
+                String storage = "unchanged";
                 if ("/api/auth/login".equals(path) && response.status == 200) {
                     String device = transport.deviceToken();
+                    storage = "missing";
                     if (device != null) {
-                        try { saveDevice(device); } catch (IOException ignored) {}
+                        try { saveDevice(device); storage = "saved"; }
+                        catch (IOException ignored) { storage = "write-error"; }
                     }
                 }
+                recordSignIn(path, response.status, storage);
                 deliver(id, "response", response.status, response.body);
             } catch (Exception failure) {
+                recordSignIn(path, 0, "transport-error");
                 deliver(id, "error", 0, "");
             }
         });

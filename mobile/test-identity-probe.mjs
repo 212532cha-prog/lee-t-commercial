@@ -70,6 +70,12 @@ try {
             return;
         }
         if (args.length >= 3 && "api".equals(args[2])) {
+            var globalCookies = new java.net.CookieManager();
+            java.net.CookieHandler.setDefault(globalCookies);
+            WarehouseApiTransport.useNativeCookieOwnership();
+            if (java.net.CookieHandler.getDefault() != null) {
+                throw new AssertionError("Global cookie handler can duplicate pinned credentials");
+            }
             WarehouseApiTransport transport = new WarehouseApiTransport(args[0], args[1], args.length == 4 ? args[3] : null);
             WarehouseIdentityProbe.Response login = transport.request("POST", "/api/auth/login", "{\"username\":\"fixture\"}", null);
             System.out.println(login.status + ":" + login.body);
