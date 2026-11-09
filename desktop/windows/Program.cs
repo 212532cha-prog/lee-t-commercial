@@ -38,6 +38,8 @@ internal static class Program
             try
             {
                 var activation = new ActivationWindow(ActivationBridge.Installed(AppContext.BaseDirectory));
+                // Only the Closed handler should choose the activation process exit code.
+                application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 activation.Closed += (_, _) => application.Shutdown(activation.ActivationAccepted ? 0 : 10);
                 return application.Run(activation);
             }

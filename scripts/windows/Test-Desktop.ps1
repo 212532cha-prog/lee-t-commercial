@@ -42,10 +42,10 @@ try {
   if($activationEntry.MainWindowHandle -ne [IntPtr]::Zero){break}
   Start-Sleep -Milliseconds 100
  }
- if($activationEntry.MainWindowHandle -eq [IntPtr]::Zero -or -not $activationEntry.CloseMainWindow()){throw 'Native activation window did not open.'}
+ if($activationEntry.MainWindowTitle -ne 'Activate LEE T Warehouse' -or -not $activationEntry.CloseMainWindow()){throw 'Native activation window did not open.'}
  if(-not $activationEntry.WaitForExit(10000)){throw 'Closing the native activation window did not terminate setup mode.'}
  $activationEntry.Refresh()
- if($activationEntry.ExitCode -ne 10){throw 'Activation cancellation must return exit code 10.'}
+ if($activationEntry.ExitCode -ne 10){throw "Activation cancellation must return exit code 10. Actual: $($activationEntry.ExitCode)."}
  $activationEntry=Start-Process -FilePath $activationExe -ArgumentList '--unexpected-argument' -PassThru
  [void]$activationEntry.Handle
  if(-not $activationEntry.WaitForExit(10000)){throw 'Invalid activation arguments did not terminate.'}
