@@ -27,6 +27,15 @@ on:
       - 'scripts/windows/**'
       - '.github/workflows/windows-commercial-test-setup.yml'
   workflow_dispatch:
+    inputs:
+      offline_issuer_key_id:
+        description: 'Publisher key ID for the offline installer'
+        required: false
+        type: string
+      offline_issuer_public_key:
+        description: 'Ed25519 SPKI PUBLIC KEY base64 only. Keep the signing private key on the issuer computer.'
+        required: false
+        type: string
 
 # A new commit supersedes older checks on the same pull request.
 concurrency:
@@ -136,4 +145,34 @@ jobs:
         with:
           name: LeeT-Test-Setup
           path: ${{ runner.temp }}/leet-setup/LeeT-Test-Setup.exe
+          if-no-files-found: error
+      - name: Build setup with the bundled offline issuer
+        shell: powershell
+        env:
+          LEE_T_OFFLINE_ISSUER_KEY_ID: ${{ inputs.offline_issuer_key_id }}
+          LEE_T_OFFLINE_ISSUER_PUBLIC_KEY: ${{ inputs.offline_issuer_public_key }}
+        run: |
+          if (-not $env:LEE_T_OFFLINE_ISSUER_KEY_ID -and -not $env:LEE_T_OFFLINE_ISSUER_PUBLIC_KEY) {
+            $env:LEE_T_OFFLINE_ISSUER_KEY_ID = 'ci-offline-fixture'
+            $env:LEE_T_OFFLINE_ISSUER_PUBLIC_KEY = node --input-type=module -e 'import {generateKeyPairSync} from ''node:crypto'';console.log(generateKeyPairSync(''ed25519'').publicKey.export({format:''der'',type:''spki''}).toString(''base64''));'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not generate the build fixture public key.' }
+          }
+          $issuer = Join-Path $env:RUNNER_TEMP 'leet-offline-issuer'
+          New-Item -ItemType Directory -Path $issuer | Out-Null
+          node scripts/windows/prepare-offline-issuer.mjs $issuer
+          if ($LASTEXITCODE -ne 0) { throw 'Could not prepare the offline installer public key.' }
+          $key = Join-Path $issuer 'issuer-public.pem'
+          $keyId = Get-Content -LiteralPath (Join-Path $issuer 'issuer-id.txt') -Raw
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          $payload = Join-Path $env:RUNNER_TEMP 'leet-payload'
+          $output = Join-Path $env:RUNNER_TEMP 'leet-offline'
+          & $compiler "/DPayloadDir=$payload" "/DBuildOutput=$output" "/DOfflineIssuerPublicKey=$key" "/DOfflineIssuerKeyId=$keyId" 'installer/windows/LeeT-Test-Setup.iss'
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $output 'LeeT-Offline-Setup.exe') -PathType Leaf)) {
+            throw 'Offline setup compilation failed.'
+          }
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.offline_issuer_key_id != '' && inputs.offline_issuer_public_key != ''
+        with:
+          name: LeeT-Offline-Setup
+          path: ${{ runner.temp }}/leet-offline/LeeT-Offline-Setup.exe
           if-no-files-found: error

@@ -32,6 +32,7 @@ internal sealed class ActivationWindow : Window
 {
     private readonly IActivationBridge bridge;
     private readonly IActivationFiles files;
+    private readonly bool offlineOnly;
     private readonly CancellationTokenSource closing = new();
     private readonly TextBlock status = Text("Checking this installation…", 14, "#475569");
     internal readonly PasswordBox Code = new() { Name = "ActivationCode", Height = 42, Padding = new Thickness(10), FontSize = 16, MaxLength = 100 };
@@ -44,10 +45,11 @@ internal sealed class ActivationWindow : Window
     internal string Status => status.Text;
     private bool activated;
 
-    internal ActivationWindow(IActivationBridge bridge, IActivationFiles? files = null)
+    internal ActivationWindow(IActivationBridge bridge, IActivationFiles? files = null, bool offlineOnly = false)
     {
         this.bridge = bridge;
         this.files = files ?? new ActivationFiles();
+        this.offlineOnly = offlineOnly;
         System.Windows.Automation.AutomationProperties.SetName(Code,"Activation key");
         Title = "Activate LEE T Warehouse";
         Width = 620; Height = 740; MinWidth = 480; MinHeight = 620;
@@ -65,7 +67,7 @@ internal sealed class ActivationWindow : Window
         online.Children.Add(Text("Activation key", 16, "#0F172A", FontWeights.SemiBold));
         online.Children.Add(Text("Enter the key supplied with your LEE T purchase.", 13, "#64748B"));
         online.Children.Add(Code); online.Children.Add(Online);
-        body.Children.Add(Card(online));
+        if (!offlineOnly) body.Children.Add(Card(online));
         var offline = new StackPanel();
         offline.Children.Add(Text("Offline activation", 16, "#0F172A", FontWeights.SemiBold));
         offline.Children.Add(Text("Export the request and send it to your LEE T provider. Import the signed license they return.", 13, "#64748B"));
@@ -85,6 +87,7 @@ internal sealed class ActivationWindow : Window
         Continue.Click += (_, _) => { if (!Busy && activated) { ActivationAccepted = true; Close(); } };
         Online.Click += async (_, _) => await Run(async () =>
         {
+            if (offlineOnly) return;
             try { await RequireSuccess(new { schema = 1, action = "activate", code = Code.Password.Trim() }); await CheckStatus(true); }
             finally { Code.Clear(); }
         });
@@ -133,7 +136,9 @@ internal sealed class ActivationWindow : Window
         var result = await RequireSuccess(new { schema = 1, action = "status" });
         activated = result.GetProperty("state").GetString() == "activated";
         if (requireActivated && !activated) throw new InvalidOperationException();
-        status.Text = activated ? "Activation verified. Continue setup to prepare your warehouse." : "Ready to activate. Use your purchase key or the offline options above.";
+        status.Text = activated ? "Activation verified. Continue setup to prepare your warehouse." :
+            offlineOnly ? "Ready to activate. Export your device request, then import the signed license." :
+            "Ready to activate. Use your purchase key or the offline options above.";
     }
 
     private async Task Run(Func<Task> operation)
@@ -142,14 +147,16 @@ internal sealed class ActivationWindow : Window
         Busy = true; status.Text = "Please wait…"; UpdateControls();
         try { await operation(); }
         catch (OperationCanceledException) when (closing.IsCancellationRequested) { }
-        catch { if (!closing.IsCancellationRequested) status.Text = "Activation could not be verified. Check your key or signed license and retry. You can close and reopen setup safely."; }
+        catch { if (!closing.IsCancellationRequested) status.Text = offlineOnly
+            ? "Activation could not be verified. Check your signed license and retry. You can close and reopen setup safely."
+            : "Activation could not be verified. Check your key or signed license and retry. You can close and reopen setup safely."; }
         finally { Busy = false; UpdateControls(); }
     }
 
     private void UpdateControls()
     {
-        Code.IsEnabled = !Busy && !activated;
-        Online.IsEnabled = !Busy && !activated && System.Text.RegularExpressions.Regex.IsMatch(Code.Password.Trim(), "^LT-[A-Za-z0-9_-]{32}$");
+        Code.IsEnabled = !offlineOnly && !Busy && !activated;
+        Online.IsEnabled = !offlineOnly && !Busy && !activated && System.Text.RegularExpressions.Regex.IsMatch(Code.Password.Trim(), "^LT-[A-Za-z0-9_-]{32}$");
         Export.IsEnabled = Import.IsEnabled = !Busy && !activated;
         Continue.IsEnabled = !Busy && activated;
     }
