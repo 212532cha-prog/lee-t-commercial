@@ -119,9 +119,12 @@ try {
                         System.out.println("200:{}");
                         break;
                     case "REOPEN":
+                    case "REOPEN_ADMINISTRATOR":
                         String device = transport.deviceToken();
+                        String session = fields[0].equals("REOPEN_ADMINISTRATOR") ? transport.sessionToken() : null;
                         transport = new WarehouseApiTransport(origin, pin, "127.0.0.1");
                         transport.restoreDevice(device);
+                        transport.restoreSession(session);
                         System.out.println("200:{}");
                         break;
                     default:

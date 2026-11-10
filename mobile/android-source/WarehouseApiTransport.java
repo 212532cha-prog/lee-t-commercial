@@ -37,13 +37,25 @@ final class WarehouseApiTransport {
     private static final String DEVICE_COOKIE = "__Host-leet_device";
 
     void restoreDevice(String token) throws IOException {
+        restoreCookie(DEVICE_COOKIE, token);
+    }
+
+    void restoreSession(String token) throws IOException {
+        restoreCookie(SESSION_COOKIE, token);
+    }
+
+    private void restoreCookie(String name, String token) throws IOException {
         if (token == null || !token.matches("[A-Za-z0-9_-]{43}")) return;
         cookies.put(origin, Collections.singletonMap("Set-Cookie", Collections.singletonList(
-            DEVICE_COOKIE + "=" + token + "; Path=/; Secure; HttpOnly")));
+            name + "=" + token + "; Path=/; Secure; HttpOnly")));
     }
 
     String deviceToken() {
         return cookieValue(DEVICE_COOKIE);
+    }
+
+    String sessionToken() {
+        return cookieValue(SESSION_COOKIE);
     }
 
     private String cookieValue(String name) {
@@ -124,7 +136,7 @@ final class WarehouseApiTransport {
         connection.setRequestProperty("Origin", origin.toString());
         // CookieManager can emit RFC 2965 quotes and $Version for Max-Age cookies.
         // The warehouse expects the same unquoted name=value tokens sent by a browser.
-        String session = cookieValue(SESSION_COOKIE);
+        String session = sessionToken();
         String device = deviceToken();
         if (session != null || device != null) {
             String header = session == null ? "" : SESSION_COOKIE + "=" + session;

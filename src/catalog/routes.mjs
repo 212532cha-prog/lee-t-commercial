@@ -17,6 +17,9 @@ export function createCatalogRoutes({auth,catalog,photos,exporter}){
    if(id&&req.method==='DELETE'){json(res,200,await catalog.deleteMaster(kind,id,{raw,csrf}));return true;}
   }
   if(path==='/api/products'&&req.method==='GET'){const a=await auth.authorize(raw);json(res,200,await catalog.list(Object.fromEntries(search),{admin:a.user.role==='admin'}));return true;}
+  if(path==='/api/products/offline-inventory'&&req.method==='GET'){
+   await auth.authorize(raw,{admin:true});json(res,200,await catalog.offlineInventory());return true;
+  }
   if(path==='/api/products'&&req.method==='POST'){await auth.authorize(raw,{admin:true,write:true,csrf});json(res,201,await catalog.create(await body(req),{raw,csrf}));return true;}
   if(path==='/api/products/import-template'&&req.method==='GET'){
    await auth.authorize(raw,{admin:true});

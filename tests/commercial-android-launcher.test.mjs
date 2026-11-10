@@ -50,7 +50,7 @@ test('administrator connection pins the warehouse, opens plain sign-in and rejec
     remember: value => remembered.push(value),
   };
   assert.equal(await launchPairing(options), true);
-  assert.deepEqual(opened, [{ url: origin + '/', certificateFingerprint: warehouse.certificateFingerprint }]);
+  assert.deepEqual(opened, [{ url: origin + '/', certificateFingerprint: warehouse.certificateFingerprint, administrator: true }]);
   assert.deepEqual(remembered, [warehouse]);
   await assert.rejects(launchPairing({ ...options, scan: async () => ({ ScanResult: qr }) }), /INVALID_ADMINISTRATOR_QR/);
   await assert.rejects(launchPairing({ ...options, administrator: false }), /INVALID_PAIRING_LINK/);
