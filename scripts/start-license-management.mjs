@@ -25,7 +25,7 @@ try {
   pool = new pg.Pool({ connectionString: settings.databaseUrl, connectionTimeoutMillis: 5000 });
   await pool.query('SELECT id FROM lee_t_customers LIMIT 0');
   const server = createManagementServer({
-    tls, origin: settings.origin, operators: settings.operators, pool, offlineIssuer,
+    tls, origin: settings.origin, operators: settings.operators, pool, offlineIssuer, offlineOnly: process.env.LEE_T_OFFLINE_ONLY === '1',
     onError: () => console.error('License management request failed.'),
   });
   server.on('error', async () => {

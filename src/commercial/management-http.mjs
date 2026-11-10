@@ -48,12 +48,16 @@ async function jsonBody(req) {
   }
 }
 
-export function createManagementServer({ tls, origin, operators, pool, offlineIssuer, onError = () => {} }) {
+export function createManagementServer({ tls, origin, operators, pool, offlineIssuer, offlineOnly = false, onError = () => {} }) {
   if (!(tls?.pfx || (tls?.key && tls.cert)) || !tls.ca || !pool || !Array.isArray(operators) || !operators.length ||
       new URL(origin).protocol !== 'https:' || new URL(origin).origin !== origin) {
     throw Error('Management requires an HTTPS origin, client CA, database and operator configuration.');
   }
   const managementRoutes = new Map(routes);
+  if (offlineOnly) {
+    if (!offlineIssuer) throw Error('Offline-only management requires an offline issuer.');
+    managementRoutes.delete('POST /api/issue');
+  }
   if (offlineIssuer) {
     validateActivationIssuer(offlineIssuer);
     managementRoutes.set('POST /api/sign-offline', (db, actor, input) => signPaidOfflineLicense(db, actor, input, offlineIssuer));
@@ -102,7 +106,7 @@ export function createManagementServer({ tls, origin, operators, pool, offlineIs
       grant.attempts = grant.attempts.filter(entry => entry !== attempt);
       if (!req.url.startsWith('/') || req.url.startsWith('//')) throw error(400, 'INVALID_URL');
       const url = new URL(req.url, origin);
-      if (req.method === 'GET' && assets.has(url.pathname)) {
+      if (!offlineOnly && req.method === 'GET' && assets.has(url.pathname)) {
         const [name, mime] = assets.get(url.pathname);
         return reply(res, 200, await readFile(new URL('./management-ui/' + name, import.meta.url)), mime);
       }
