@@ -1,4 +1,5 @@
 #Requires -RunAsAdministrator
+param([string]$DesktopExecutable)
 $ErrorActionPreference='Stop'
 $root=Join-Path $env:RUNNER_TEMP ('leet-issuer-'+[guid]::NewGuid().ToString('N'))
 $node=(Get-Command node.exe).Source
@@ -8,6 +9,7 @@ $process=$null
 $provisioned=$false
 $certificates=@()
 $priorConfig=$env:LEE_T_MANAGEMENT_CONFIG
+$priorMode=$env:LEE_T_OFFLINE_ONLY
 $testPassword=[guid]::NewGuid().ToString('N')
 $databaseListener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0)
 $managementListener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0)
@@ -35,6 +37,7 @@ try{
  catch{if($_.Exception.Message -notlike '*Existing issuer data*'){throw};$blocked=$true}
  if(-not $blocked){throw 'Existing issuer setup was not preserved.'}
  $env:LEE_T_MANAGEMENT_CONFIG=Join-Path $root 'management.private.json'
+ if($DesktopExecutable){$env:LEE_T_OFFLINE_ONLY='1'}
  $script=Join-Path $PSScriptRoot '..\start-license-management.mjs'
  $process=Start-Process -FilePath $node -ArgumentList ('"'+$script+'"') -PassThru -RedirectStandardOutput (Join-Path $root 'stdout.log') -RedirectStandardError (Join-Path $root 'stderr.log')
  $ready=$false
@@ -69,11 +72,31 @@ if(!verifyLicense({license,request,publicKeyPem,runningVersion:'0.8.5'}).valid)p
  [IO.File]::WriteAllText($verificationPath,$verification,[Text.UTF8Encoding]::new($false))
  & $node --input-type=module -e $signatureCheck -- $verificationPath
  if($LASTEXITCODE -ne 0){throw 'The generated publisher key did not verify the signed license.'}
+ if($DesktopExecutable){
+  $denied=$false
+  try{Call-Management '/api/issue' @{customerId=$customer.id;paymentId=$payment.id} | Out-Null}
+  catch{if([int]$_.Exception.Response.StatusCode -ne 404){throw};$denied=$true}
+  if(-not $denied){throw 'Offline-only management accepted an online activation endpoint.'}
+  $passwordFile=Join-Path $root 'desktop-password.txt'
+  $requestFile=Join-Path $root 'desktop-request.json'
+  $outputFile=Join-Path $root 'desktop-license.json'
+  $utf8=[Text.UTF8Encoding]::new($false)
+  [IO.File]::WriteAllText($passwordFile,$testPassword,$utf8)
+  [IO.File]::WriteAllText($requestFile,($request|ConvertTo-Json -Depth 8 -Compress),$utf8)
+  $desktop=Start-Process -FilePath $DesktopExecutable -ArgumentList @('--test',('"' + $root + '"'),('"' + $passwordFile + '"'),('"' + $requestFile + '"'),('"' + $outputFile + '"')) -PassThru
+  if(-not $desktop.WaitForExit(90000)){$desktop.Kill();throw 'The desktop issuer test timed out.'}
+  if($desktop.ExitCode -ne 0){throw 'The desktop issuer integration failed.'}
+  $desktopLicense=Get-Content -LiteralPath $outputFile -Raw | ConvertFrom-Json
+  [IO.File]::WriteAllText($verificationPath,(@{license=$desktopLicense;request=$request;publicKeyPath=(Join-Path $root 'issuer-public.pem')}|ConvertTo-Json -Depth 12 -Compress),$utf8)
+  & $node --input-type=module -e $signatureCheck -- $verificationPath
+  if($LASTEXITCODE -ne 0){throw 'The desktop issuer output failed independent signature verification.'}
+ }
  Write-Output 'Windows local issuer setup, TLS operator login, paid signing and exact retry passed.'
 }finally{
  $databaseListener.Stop()
  $managementListener.Stop()
  $env:LEE_T_MANAGEMENT_CONFIG=$priorConfig
+ $env:LEE_T_OFFLINE_ONLY=$priorMode
  if($process -and -not $process.HasExited){Stop-Process -Id $process.Id -Force; $process.WaitForExit()}
  if($provisioned){
   if($ca){Remove-Item -LiteralPath ('Cert:\LocalMachine\Root\'+$ca.Thumbprint) -ErrorAction SilentlyContinue}
