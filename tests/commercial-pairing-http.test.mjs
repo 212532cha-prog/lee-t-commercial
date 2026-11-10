@@ -9,6 +9,7 @@ import { AuthService } from '../src/auth/service.mjs';
 import { EmployeePairing } from '../src/commercial/employee-pairing.mjs';
 import { migrate } from '../src/db/database.mjs';
 import { testPool } from './helpers/database.mjs';
+import { parseAdministratorQr } from '../public/app/pairing.js';
 
 test('commercial QR enrollment verifies employees, binds one device and revokes old sessions', async t => {
   const { pool } = await testPool();
@@ -61,6 +62,21 @@ test('commercial QR enrollment verifies employees, binds one device and revokes 
   const config = await request(configPath, { cookie: sessionCookie(admin.token) });
   assert.equal(config.status, 200);
   assert.deepEqual(config.body, { serverId: pairing.serverId, origin });
+  const administratorQr = cookie => fetch(endpoint + '/api/commercial/administrator-qr', { headers: { Cookie: cookie } });
+  assert.equal((await administratorQr('')).status, 401);
+  const qrResponse = await administratorQr(sessionCookie(admin.token));
+  assert.equal(qrResponse.status, 200);
+  assert.equal(qrResponse.headers.get('content-type'), 'image/png');
+  const adminImage = await sharp(Buffer.from(await qrResponse.arrayBuffer())).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const adminCode = jsQR(new Uint8ClampedArray(adminImage.data), adminImage.info.width, adminImage.info.height).data;
+  assert.deepEqual(parseAdministratorQr(adminCode), { origin, serverId: pairing.serverId, certificateFingerprint });
+  assert.deepEqual(Object.keys(JSON.parse(decodeURIComponent(new URL(adminCode).hash.slice('#warehouse='.length)))).sort(),
+    ['certificateFingerprint', 'origin', 'schema', 'serverId']);
+  const adminMobile = await login({ username: 'CTL LEE', password: adminSecret });
+  assert.equal(adminMobile.body.user.role, 'admin');
+  assert.equal(adminMobile.cookies.length, 1);
+  assert.equal((await me(adminMobile.cookies[0].split(';')[0])).body.administratorMobilePairing, true);
+  assert.equal((await me(sessionCookie(admin.token))).status, 200);
   const expired = await manage('invite');
   await pool.query("UPDATE employee_pairing_invites SET expires_at=now()-interval '1 second'");
   assert.equal((await login({ ...employee, invitation: expired.body.invitation })).status, 403);
@@ -87,6 +103,7 @@ test('commercial QR enrollment verifies employees, binds one device and revokes 
   assert.equal((await me(browserCookies.find(value => value.startsWith('__Host-warehouse_session=')))).status, 401);
   assert.equal((await manage('unbind', browserCookies.join('; '), paired.body.csrf)).status, 403);
   assert.equal((await request(configPath, { cookie: browserCookies.join('; ') })).status, 403);
+  assert.equal((await administratorQr(browserCookies.join('; '))).status, 403);
   assert.equal((await manage('invite')).body.error, 'EMPLOYEE_ALREADY_PAIRED');
   assert.equal((await login(employee)).body.error, 'EMPLOYEE_DEVICE_NOT_AUTHORIZED');
   assert.equal((await login(employee, device)).status, 200);

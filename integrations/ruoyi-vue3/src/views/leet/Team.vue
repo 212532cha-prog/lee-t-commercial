@@ -6,6 +6,10 @@ import { createTeamClient } from './team-api.mjs'
 const api = createTeamClient()
 const employees = ref([])
 const pairingEnabled = ref(false)
+const administratorMobilePairing = ref(false)
+const administratorQr = ref(false)
+const administratorQrFailed = ref(false)
+const administratorQrUrl = '/api/commercial/administrator-qr'
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
@@ -64,6 +68,7 @@ async function refresh() {
     const [session, rows] = await Promise.all([api.session(controller.signal), api.list(controller.signal)])
     if (controller.signal.aborted) return
     pairingEnabled.value = !!session.employeePairing
+    administratorMobilePairing.value = !!session.administratorMobilePairing
     employees.value = rows
   } catch (failure) {
     if (!controller.signal.aborted) { employees.value = []; report(failure) }
@@ -158,6 +163,7 @@ onUnmounted(() => { disposed = true; request?.abort(); closeQr(); clearDraft() }
     <div class="team-toolbar">
       <el-button :disabled="loading || saving" @click="refresh">Refresh employees</el-button>
       <el-button type="primary" :disabled="loading || saving" @click="edit(null)">Add employee</el-button>
+      <el-button v-if="administratorMobilePairing" :disabled="loading || saving" @click="administratorQrFailed = false; administratorQr = true">Connect administrator phone</el-button>
     </div>
     <p v-if="pairingEnabled">Unbind the current device before authorizing a replacement. Force sign-out preserves its device binding.</p>
     <el-table :data="employees" empty-text="No employees">
@@ -192,6 +198,13 @@ onUnmounted(() => { disposed = true; request?.abort(); closeQr(); clearDraft() }
         <el-button native-type="submit" type="primary" :loading="saving" :disabled="invalidDraft">Save employee</el-button>
         <el-button :disabled="saving" @click="clearDraft">Cancel</el-button>
       </el-form>
+    </el-dialog>
+    <el-dialog v-model="administratorQr" title="Connect administrator phone">
+      <template v-if="administratorQr">
+        <p>In LEE T Mobile, choose Administrator sign-in and scan this code. Then sign in with your administrator account.</p>
+        <el-alert v-if="administratorQrFailed" title="Could not load the code. Close this window and try again." type="error" :closable="false" />
+        <img v-else class="pairing-image" :src="administratorQrUrl" alt="Administrator warehouse connection QR" width="320" height="320" @error="administratorQrFailed = true">
+      </template>
     </el-dialog>
     <el-dialog :model-value="!!qr" title="Employee pairing QR" :close-on-click-modal="false" :before-close="done => { closeQr(); done() }">
       <template v-if="qr">

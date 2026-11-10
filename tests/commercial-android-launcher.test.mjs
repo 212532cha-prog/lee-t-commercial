@@ -33,6 +33,33 @@ test('Android launcher opens only a verified invitation in the in-app workspace'
   assert.deepEqual(remembered, [{ origin, serverId: invitation.serverId }]);
 });
 
+test('administrator connection pins the warehouse, opens plain sign-in and rejects employee QR codes', async () => {
+  const warehouse = { origin, serverId: invitation.serverId, certificateFingerprint: 'ab'.repeat(32) };
+  const adminQr = origin + '/#warehouse=' + encodeURIComponent(JSON.stringify({ schema: 1, ...warehouse }));
+  const opened = [], remembered = [];
+  const options = {
+    administrator: true,
+    scan: async () => ({ ScanResult: adminQr }),
+    request: () => assert.fail('Unpinned warehouse request'),
+    requestPinned: async ({ url, certificateFingerprint }) => {
+      assert.equal(url, origin + '/api/commercial/server-identity');
+      assert.equal(certificateFingerprint, warehouse.certificateFingerprint);
+      return { status: 200, url, data: { schema: 1, serverId: warehouse.serverId } };
+    },
+    open: async value => opened.push(value),
+    remember: value => remembered.push(value),
+  };
+  assert.equal(await launchPairing(options), true);
+  assert.deepEqual(opened, [{ url: origin + '/', certificateFingerprint: warehouse.certificateFingerprint }]);
+  assert.deepEqual(remembered, [warehouse]);
+  await assert.rejects(launchPairing({ ...options, scan: async () => ({ ScanResult: qr }) }), /INVALID_ADMINISTRATOR_QR/);
+  await assert.rejects(launchPairing({ ...options, administrator: false }), /INVALID_PAIRING_LINK/);
+  await assert.rejects(launchPairing({ ...options, requestPinned: undefined }), /PAIRING_PIN_REQUIRED/);
+  await assert.rejects(launchPairing({ ...options, requestPinned: async ({ url }) =>
+    ({ status: 200, url, data: { schema: 1, serverId: randomUUID() } }) }), /PAIRING_SERVER_MISMATCH/);
+  assert.equal(opened.length, 1);
+});
+
 test('Android launcher leaves the workspace closed on cancellation, bad QR, redirected and mismatched servers', async () => {
   const open = () => assert.fail('Unexpected workspace launch');
   const request = () => assert.fail('Unexpected network request');

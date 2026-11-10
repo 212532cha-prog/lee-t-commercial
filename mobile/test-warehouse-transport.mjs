@@ -64,6 +64,11 @@ export async function testWarehouseTransport({ classesDirectory, cert, key, pin 
     };
 
     const login = '/api/auth/login';
+    const mobileAdmin = await request('POST', login, { body: { username: 'CTL LEE', password: adminPassword } });
+    assert.equal(mobileAdmin.user.role, 'admin');
+    assert.equal((await request('GET', '/api/me')).user.id, admin.user.id);
+    await request('POST', '/api/auth/logout', { csrf: mobileAdmin.csrf, body: {} });
+    await request('GET', '/api/me', { status: 401 });
     const credentials = { username: 'test employee', password };
     assert.equal((await request('POST', login, { body: credentials, status: 403 })).error, 'EMPLOYEE_PAIRING_REQUIRED');
     const signedIn = await request('POST', login, { body: { ...credentials, invitation } });

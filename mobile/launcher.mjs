@@ -1,4 +1,4 @@
-import { parsePairingQr, preparePairingSignIn, verifyPairingServer } from '../public/app/pairing.js';
+import { parseAdministratorQr, parsePairingQr, preparePairingSignIn, verifyPairingServer } from '../public/app/pairing.js';
 
 function nativeIdentityRequest(request, requestPinned, route, progress) {
   return async (url, { certificateFingerprint }) => {
@@ -56,11 +56,19 @@ async function openWorkspace(open, url, certificateFingerprint, route) {
   });
 }
 
-export async function launchPairing({ scan, request, requestPinned, discover, open, remember = () => {}, progress = () => {}, now = Date.now }) {
+export async function launchPairing({ scan, request, requestPinned, discover, open, remember = () => {}, progress = () => {}, now = Date.now, administrator = false }) {
   const result = await Promise.resolve().then(scan).catch(() => {
     throw Error('PAIRING_SCAN_FAILED');
   });
   if (!result?.ScanResult) return false;
+  if (administrator) {
+    const warehouse = parseAdministratorQr(result.ScanResult);
+    const route = await findWarehouseRoute(warehouse, { request, requestPinned, discover, progress });
+    progress('opening');
+    await openWorkspace(open, new URL('/', warehouse.origin).href, warehouse.certificateFingerprint, route);
+    remember({ ...warehouse, ...(route && { route }) });
+    return true;
+  }
   let route;
   const signIn = await preparePairingSignIn(result.ScanResult, {
     now, verify: async invitation => { route = await findWarehouseRoute(invitation, { request, requestPinned, discover, progress }); },
