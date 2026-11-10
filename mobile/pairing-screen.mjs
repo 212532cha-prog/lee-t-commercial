@@ -2,13 +2,15 @@ import { launchPairing, resumeWarehouse } from './launcher.mjs';
 import { copy } from './pairing-copy.mjs';
 
 export function mountPairingScreen({ document, storage, native, scan, request, requestPinned, discover, open,
-  cameraAllowed, openSettings }) {
+  cameraAllowed, openSettings, offlineInventory, clearAdministrator }) {
   const element = id => document.getElementById(id);
   const language = element('language');
   const scanButton = element('scan');
   const resume = element('resume');
   const administrator = element('administrator');
   const administratorScan = element('administrator-scan');
+  const offline = element('offline-inventory');
+  const forget = element('clear-administrator');
   const settings = element('settings');
   const feedback = element('feedback');
   const keys = { warehouse: 'leet-verified-warehouse', administrator: 'leet-verified-administrator-warehouse', language: 'leet-mobile-language' };
@@ -33,6 +35,26 @@ export function mountPairingScreen({ document, storage, native, scan, request, r
   let status = native ? null : 'unsupported';
   let failed = false;
   let busy = false;
+  let snapshot = null;
+
+  function renderInventory(words) {
+    element('offline-panel').hidden = !snapshot;
+    const rows = element('offline-rows');
+    rows.replaceChildren();
+    if (!snapshot) return;
+    element('offline-time').textContent = words.offlineTime + ' ' + new Intl.DateTimeFormat(locale, {
+      dateStyle: 'medium', timeStyle: 'short',
+    }).format(new Date(snapshot.synchronizedAt));
+    for (const [id, label] of Object.entries({
+      title: 'offlineTitle', 'read-only': 'offlineReadOnly', code: 'offlineCode', product: 'offlineProduct',
+      quantity: 'offlineQuantity', close: 'offlineClose', empty: 'offlineEmpty',
+    })) element('offline-' + id).textContent = words[label];
+    element('offline-empty').hidden = snapshot.products.length !== 0;
+    for (const product of snapshot.products) {
+      const row = rows.insertRow();
+      for (const value of [product.productCode, product.name, product.quantity]) row.insertCell().textContent = value;
+    }
+  }
 
   function render() {
     const words = copy[locale];
@@ -53,12 +75,18 @@ export function mountPairingScreen({ document, storage, native, scan, request, r
     administrator.textContent = words.administrator;
     administratorScan.textContent = words.administratorScan;
     administratorScan.hidden = !administratorWarehouse;
+    offline.hidden = !administratorWarehouse || !offlineInventory;
+    forget.hidden = !administratorWarehouse || !clearAdministrator;
+    offline.disabled = forget.disabled = busy || !native;
+    offline.textContent = words.offlineTitle;
+    forget.textContent = words.offlineForget;
     element('actions').setAttribute('aria-busy', String(busy));
     feedback.hidden = !status;
     feedback.dataset.error = String(failed);
     element('status').textContent = status ? words[status] : '';
     settings.hidden = status !== 'PAIRING_CAMERA_DENIED' || !openSettings;
     settings.textContent = words.settings;
+    renderInventory(words);
   }
 
   function progress(next) {
@@ -81,6 +109,7 @@ export function mountPairingScreen({ document, storage, native, scan, request, r
     if (busy || !native) return;
     busy = true;
     failed = false;
+    snapshot = null;
     const admin = action === 'administrator' || action === 'administrator-scan';
     const needsScan = action === 'scan' || action === 'administrator-scan' || (admin && !administratorWarehouse);
     progress(needsScan ? 'scanning' : 'connecting');
@@ -91,7 +120,8 @@ export function mountPairingScreen({ document, storage, native, scan, request, r
           administrator: admin, scan: () => scan(copy[locale], admin) });
         progress(opened ? null : 'cancelled');
       } else {
-        await resumeWarehouse({ ...(admin ? administratorConnection : connection), warehouse: admin ? administratorWarehouse : warehouse });
+        await resumeWarehouse({ ...(admin ? administratorConnection : connection),
+          warehouse: admin ? administratorWarehouse : warehouse, administrator: admin });
         progress(null);
       }
     } catch (error) {
@@ -113,6 +143,44 @@ export function mountPairingScreen({ document, storage, native, scan, request, r
   resume.addEventListener('click', () => run('resume'));
   administrator.addEventListener('click', () => run('administrator'));
   administratorScan.addEventListener('click', () => run('administrator-scan'));
+  offline.addEventListener('click', async () => {
+    if (busy || !administratorWarehouse) return;
+    busy = true;
+    snapshot = null;
+    failed = false;
+    status = null;
+    render();
+    try {
+      const value = await offlineInventory(administratorWarehouse);
+      if (Number.isFinite(Date.parse(value?.synchronizedAt)) && Array.isArray(value.products) && value.products.length <= 5000 &&
+          value.products.every(product => ['productCode', 'name', 'quantity'].every(key => typeof product?.[key] === 'string'))) {
+        snapshot = value;
+      }
+    } catch { /* No usable encrypted snapshot. */ }
+    finally {
+      busy = false;
+      if (!snapshot) { failed = true; status = 'offlineUnavailable'; }
+      render();
+    }
+  });
+  forget.addEventListener('click', async () => {
+    if (busy || !administratorWarehouse) return;
+    busy = true;
+    snapshot = null;
+    render();
+    try {
+      await clearAdministrator(administratorWarehouse);
+      failed = false;
+      status = 'offlineCleared';
+    } catch {
+      failed = true;
+      status = 'offlineClearFailed';
+    } finally {
+      busy = false;
+      render();
+    }
+  });
+  element('offline-close').addEventListener('click', () => { snapshot = null; render(); });
   settings.addEventListener('click', async () => {
     try { await openSettings(); } catch { /* Permission guidance remains on screen. */ }
   });

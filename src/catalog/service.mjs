@@ -123,6 +123,14 @@ export class CatalogService{
   return {...this.project(row,admin),qrToken:row.qr_token,suppliers:suppliers.map(s=>({id:s.supplier_id,name:s.name||s.supplier_name_snapshot,deleted:s.supplier_id===null,isDefault:s.is_default}))};
  }
  project(row,admin){return {id:row.id,productCode:row.product_code,name:row.name,categoryId:row.category_id,categoryName:row.category_name||row.category_name_snapshot,categoryDeleted:row.category_id===null,locationId:row.location_id,locationName:row.location_name,minimumStock:Number(row.minimum_stock),quantity:Number(row.quantity),inventoryVersion:String(row.version),detailsVersion:String(row.details_version),hasPhoto:!!row.photo_key,...(admin?{individualCost:row.individual_cost}:{} )};}
+ async offlineInventory(){
+  const {rows}=await this.pool.query(`SELECT p.product_code AS "productCode",p.name,b.quantity::text AS quantity
+    FROM products p JOIN inventory_balances b ON b.product_id=p.id
+    ORDER BY lower(p.name) COLLATE "C",p.sort_order LIMIT 5001`);
+  const snapshot={synchronizedAt:new Date().toISOString(),products:rows};
+  if(rows.length>5000||Buffer.byteLength(JSON.stringify(snapshot))>1500000)throw new AuthError('OFFLINE_INVENTORY_TOO_LARGE',413);
+  return snapshot;
+ }
  async list({categoryId,locationId,cursor,limit=20,q}={},role={}){
   limit=Number(limit);if(!Number.isInteger(limit)||limit<1||limit>100)throw new AuthError('INVALID_LIMIT');
   const filters=[categoryId||null,locationId||null];filters.forEach(v=>{if(v)identifier(v);});

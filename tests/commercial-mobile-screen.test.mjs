@@ -33,6 +33,11 @@ test('mobile pairing screen guides camera recovery, discovery, and reopening at 
       },
       discover: () => new Promise(resolve => { fixture.resolveDiscovery = resolve; }),
       open: async options => fixture.opens.push(options),
+      offlineInventory: async () => fixture.cleared ? {} : {
+        synchronizedAt: '2026-11-09T01:00:00Z',
+        products: [{productCode: 'P001', name: '<img src=x>', quantity: '14'}],
+      },
+      clearAdministrator: async () => { fixture.cleared = true; },
     });
   `;
   const server = createServer(async (req, res) => {
@@ -83,7 +88,7 @@ test('mobile pairing screen guides camera recovery, discovery, and reopening at 
   assert.equal(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth), true);
 
   await page.evaluate(() => { globalThis.fixture.granted = true; });
-  const administrator = page.getByRole('button', { name: '管理员登录' });
+  const administrator = page.getByRole('button', { name: '管理员登录', exact: true });
   await administrator.click();
   await page.getByText(/正在局域网寻找仓库/).waitFor();
   await page.evaluate(() => globalThis.fixture.resolveDiscovery(['192.168.1.46']));
@@ -97,4 +102,16 @@ test('mobile pairing screen guides camera recovery, discovery, and reopening at 
   await administrator.click();
   await page.waitForFunction(() => globalThis.fixture.opens.length === 1);
   assert.deepEqual(await page.evaluate(() => [globalThis.fixture.scans, globalThis.fixture.opens[0].route]), [0, '192.168.1.46']);
+  assert.equal(await page.evaluate(() => globalThis.fixture.opens[0].administrator), true);
+  await page.getByRole('button', { name: '查看离线库存' }).click();
+  await page.getByText(/最后同步时间/).waitFor();
+  await page.getByRole('cell', { name: '<img src=x>' }).waitFor();
+  await page.getByRole('cell', { name: '14' }).waitFor();
+  assert.equal(await page.locator('#offline-rows img').count(), 0);
+  assert.equal(await page.evaluate(() => globalThis.fixture.opens.length), 1);
+  await page.getByRole('button', { name: '清除管理员登录记录' }).click();
+  await page.getByText('已清除管理员登录记录和离线库存。').waitFor();
+  assert.equal(await page.locator('#offline-panel').isVisible(), false);
+  await page.getByRole('button', { name: '查看离线库存' }).click();
+  await page.getByText(/没有可用的离线库存/).waitFor();
 });

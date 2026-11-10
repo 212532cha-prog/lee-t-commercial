@@ -27,11 +27,24 @@
         <button id="scan" class="primary" type="button" disabled>Scan employee pairing code</button>
         <button id="administrator" class="secondary" type="button" disabled>Administrator sign-in</button>
         <button id="administrator-scan" class="secondary" type="button" hidden>Scan a new administrator code</button>
+        <button id="offline-inventory" class="secondary" type="button" hidden>View offline inventory</button>
+        <button id="clear-administrator" class="secondary" type="button" hidden>Forget saved administrator access</button>
       </div>
       <div class="feedback" id="feedback" hidden>
         <p id="status" role="status" aria-live="polite"></p>
         <button id="settings" class="secondary" type="button" hidden></button>
       </div>
+    </section>
+    <section class="card offline-inventory" id="offline-panel" aria-labelledby="offline-title" hidden>
+      <h2 id="offline-title"></h2>
+      <p id="offline-time"></p>
+      <p id="offline-read-only"></p>
+      <table>
+        <thead><tr><th id="offline-code" scope="col"></th><th id="offline-product" scope="col"></th><th id="offline-quantity" scope="col"></th></tr></thead>
+        <tbody id="offline-rows"></tbody>
+      </table>
+      <p id="offline-empty" hidden></p>
+      <button id="offline-close" class="secondary" type="button"></button>
     </section>
     <footer id="footer"></footer>
   </main>

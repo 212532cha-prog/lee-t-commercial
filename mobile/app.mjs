@@ -17,6 +17,8 @@ mountPairingScreen({
   requestPinned: options => workspace.verifyIdentity(options),
   discover: async options => (await workspace.discover(options)).addresses,
   open: options => workspace.open(options),
+  offlineInventory: options => workspace.offlineInventory(options),
+  clearAdministrator: options => workspace.clearAdministrator(options),
   cameraAllowed: async () => (await workspace.ensureCamera()).granted,
   openSettings: () => workspace.openSettings(),
 });

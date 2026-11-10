@@ -50,8 +50,9 @@ async function findWarehouseRoute(warehouse, { request, requestPinned, discover,
   }
 }
 
-async function openWorkspace(open, url, certificateFingerprint, route) {
-  await Promise.resolve().then(() => open({ url, ...(certificateFingerprint && { certificateFingerprint }), ...(route && { route }) })).catch(() => {
+async function openWorkspace(open, url, certificateFingerprint, route, administrator) {
+  await Promise.resolve().then(() => open({ url, ...(certificateFingerprint && { certificateFingerprint }),
+    ...(route && { route }), ...(administrator && { administrator: true }) })).catch(() => {
     throw Error('PAIRING_WORKSPACE_FAILED');
   });
 }
@@ -65,7 +66,7 @@ export async function launchPairing({ scan, request, requestPinned, discover, op
     const warehouse = parseAdministratorQr(result.ScanResult);
     const route = await findWarehouseRoute(warehouse, { request, requestPinned, discover, progress });
     progress('opening');
-    await openWorkspace(open, new URL('/', warehouse.origin).href, warehouse.certificateFingerprint, route);
+    await openWorkspace(open, new URL('/', warehouse.origin).href, warehouse.certificateFingerprint, route, true);
     remember({ ...warehouse, ...(route && { route }) });
     return true;
   }
@@ -80,10 +81,10 @@ export async function launchPairing({ scan, request, requestPinned, discover, op
   return true;
 }
 
-export async function resumeWarehouse({ warehouse, request, requestPinned, discover, open, remember = () => {}, progress = () => {} }) {
+export async function resumeWarehouse({ warehouse, request, requestPinned, discover, open, remember = () => {}, progress = () => {}, administrator = false }) {
   const route = await findWarehouseRoute(warehouse, { request, requestPinned, discover, progress });
   progress('opening');
-  await openWorkspace(open, new URL('/', warehouse.origin).href, warehouse.certificateFingerprint, route);
+  await openWorkspace(open, new URL('/', warehouse.origin).href, warehouse.certificateFingerprint, route, administrator);
   const { route: previousRoute, ...identity } = warehouse;
   if (route !== previousRoute) remember({ ...identity, ...(route && { route }) });
 }

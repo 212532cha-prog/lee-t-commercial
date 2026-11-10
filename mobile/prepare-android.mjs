@@ -38,7 +38,7 @@ writeFileSync(manifestPath, workspaceManifest);
 mkdirSync(main + '/res/drawable-nodpi', { recursive: true });
 copyFileSync('../public/brand/lee-t-logo.jpg', main + '/res/drawable-nodpi/leet_launcher.jpg');
 const java = main + '/java/my/leet/warehouse';
-for (const name of ['MainActivity.java', 'WarehouseActivity.java', 'WarehouseIdentityProbe.java', 'WarehouseDiscovery.java', 'WarehouseApiTransport.java', 'PinnedWorkspace.java', 'WarehouseWorkspacePlugin.java']) {
+for (const name of ['MainActivity.java', 'WarehouseActivity.java', 'WarehouseIdentityProbe.java', 'WarehouseDiscovery.java', 'WarehouseApiTransport.java', 'PinnedWorkspace.java', 'WarehouseWorkspacePlugin.java', 'AdministratorStorage.java']) {
   copyFileSync('android-source/' + name, java + '/' + name);
 }
 mkdirSync(main + '/res/xml', { recursive: true });
