@@ -21,12 +21,14 @@ internal static class ActivationChecks
         var script = Path.Combine(source, "desktop", "tests", "activation-fixture.mjs");
         var bridge = new ActivationBridge(node, script, config, TimeSpan.FromSeconds(15));
         var files = new Files();
-        var ui = new ActivationWindow(bridge, files);
+        var ui = new ActivationWindow(bridge, files, offlineOnly: true);
         ui.Show();
         try
         {
             await Until(() => !ui.Busy && ui.Status.StartsWith("Ready to activate"));
             Require(!ui.Continue.IsEnabled && !ui.Online.IsEnabled, "Activation must not continue without verification.");
+            Require(!ui.Code.IsVisible && !ui.Online.IsVisible && !ui.Status.Contains("purchase key"),
+                "Offline activation must only show device requests and signed licenses.");
             ui.UpdateLayout();
             Require(ui.Continue.TranslatePoint(new Point(0,ui.Continue.ActualHeight),ui).Y <= ui.ActualHeight - 8,
                 "The initial activation footer is clipped on the default screen.");

@@ -33,11 +33,12 @@ internal static class Program
         }
 
         var application = new Application();
-        if (args.SequenceEqual(new[] { "--activate" }))
+        if (args.Length == 1 && args[0] is "--activate" or "--activate-offline")
         {
             try
             {
-                var activation = new ActivationWindow(ActivationBridge.Installed(AppContext.BaseDirectory));
+                var activation = new ActivationWindow(ActivationBridge.Installed(AppContext.BaseDirectory),
+                    offlineOnly: args[0] == "--activate-offline");
                 // Only the Closed handler should choose the activation process exit code.
                 application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 activation.Closed += (_, _) => application.Shutdown(activation.ActivationAccepted ? 0 : 10);
