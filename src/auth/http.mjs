@@ -50,7 +50,15 @@ export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=
    if(auth.pairing&&raw&&url.startsWith('/api/')){
     await auth.pairing.checkSessionCookie(auth.pool,raw,cookieToken(req,'__Host-leet_device'));
    }
-   if(req.method==='GET'&&url==='/api/me'){const result=await auth.authorize(raw,{sessionOnly:true});json(res,200,{...result,...(auth.pairing?{employeePairing:true}:{})});return;}
+   if(req.method==='GET'&&url==='/api/me'){const result=await auth.authorize(raw,{sessionOnly:true});json(res,200,{...result,...(auth.pairing?{employeePairing:true}:{}),...(result.user.role==='admin'&&auth.pairing?.certificateFingerprint?{administratorMobilePairing:true}:{})});return;}
+   if(req.method==='GET'&&url==='/api/commercial/administrator-qr'&&auth.pairing?.certificateFingerprint){
+    await auth.authorize(raw,{admin:true});
+    const {origin,serverId,certificateFingerprint}=auth.pairing;
+    const link=new URL('/',origin);
+    link.hash='warehouse='+encodeURIComponent(JSON.stringify({schema:1,origin,serverId,certificateFingerprint}));
+    const qr=await QRCode.toBuffer(link.href,{width:320,errorCorrectionLevel:'M'});
+    res.writeHead(200,{'Content-Type':'image/png'});res.end(qr);return;
+   }
    if(req.method==='GET'&&url==='/api/state'){const a=await auth.authorize(raw,{sessionOnly:true});const flags=(await auth.pool.query('SELECT maintenance,admin_backup_required,clock_timestamp() AS server_time FROM system_settings WHERE id=1')).rows[0];const task=a.user.role==='employee'?(await auth.pool.query("SELECT id,run_generation FROM count_tasks WHERE assigned_user_id=$1 AND status='active'",[a.user.id])).rows[0]:null;json(res,200,{serverTime:flags.server_time,maintenance:flags.maintenance,adminBackupRequired:a.user.role==='admin'&&flags.admin_backup_required,task:task?{id:task.id,generation:String(task.run_generation)}:null});return;}
    if(req.method==='POST'&&url==='/api/auth/logout'){await auth.authorize(raw,{write:true,csrf,sessionOnly:true});await auth.logout(raw);res.setHeader('Set-Cookie',clearCookie());json(res,200,{ok:true});return;}
    if(req.method==='POST'&&url==='/api/me/password'){const a=await auth.authorize(raw,{admin:true,write:true,csrf});const input=await body(req);await auth.changeAdminPassword(a.user.id,input.oldPassword,input.newPassword,{raw,csrf});res.setHeader('Set-Cookie',clearCookie());json(res,200,{ok:true,requiresLogin:true});return;}
