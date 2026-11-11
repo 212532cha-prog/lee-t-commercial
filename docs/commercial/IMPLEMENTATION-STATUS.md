@@ -1,5 +1,7 @@
 # Lee T Commercial Edition — implementation status (2026-11-06)
 
+> 2026-11-12 更新。当前首发范围、已交付功能、测试证据与待验收项见 [RELEASE-STATUS.md](RELEASE-STATUS.md)。首发使用离线激活，iOS 已取消。本文下方保留阶段历史，历史云端和 iOS 计划按当前范围执行。正式签名与安全分发验收由 [任务 #30](https://github.com/212532cha-prog/lee-t-commercial/issues/30) 跟踪。
+
 ## Source baseline
 
 - Source: `warehouse-inventory-0.8.5-candidate.zip` supplied by product owner.

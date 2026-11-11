@@ -1,5 +1,7 @@
 # LEE T Warehouse 商业发售版开发与验收计划
 
+> 2026-11-12 更新。当前首发范围、已交付功能、测试证据与待验收项见 [RELEASE-STATUS.md](RELEASE-STATUS.md)。首发使用离线激活，iOS 已取消。本文下方保留阶段历史，历史云端和 iOS 计划按当前范围执行。正式签名与安全分发验收由 [任务 #30](https://github.com/212532cha-prog/lee-t-commercial/issues/30) 跟踪。
+
 - 版本 v2.8 · 2026-11-08
 - 需求规格 [PDR.md](../../PDR.md)
 - 仓库基线 [PRD](../../PRD.md) · [原开发计划](../../开发计划.md) · [验收清单](../../验收清单.md)
