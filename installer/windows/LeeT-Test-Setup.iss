@@ -289,12 +289,16 @@ var
   PowerShell, Script, Arguments: String;
   Desktop, RuntimeInstaller: String;
   DesktopResult: Integer;
+#ifdef CommercialRelease
+  InstallRecord: TArrayOfString;
+#endif
 begin
   if CurStep <> ssPostInstall then Exit;
 #ifdef CommercialRelease
-  if not SaveStringToUTF8File(ExpandConstant('{app}\commercial-install.json'),
-      '{"Schema":1,"PayloadDirectory":"' + JsonPath(ExpandConstant('{app}')) +
-      '","DataRoot":"' + JsonPath(RemoveBackslashUnlessRoot(DataPage.Values[0])) + '"}', False) then
+  SetArrayLength(InstallRecord, 1);
+  InstallRecord[0] := '{"Schema":1,"PayloadDirectory":"' + JsonPath(ExpandConstant('{app}')) +
+      '","DataRoot":"' + JsonPath(RemoveBackslashUnlessRoot(DataPage.Values[0])) + '"}';
+  if not SaveStringsToUTF8File(ExpandConstant('{app}\commercial-install.json'), InstallRecord, False) then
     RaiseException('Could not save the installation record.');
 #endif
   Desktop := ExpandConstant('{app}\desktop\LeeT.Warehouse.exe');
