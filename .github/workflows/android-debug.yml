@@ -6,11 +6,17 @@ on:
     paths:
       - 'mobile/**'
       - 'public/app/**'
+      - 'public/brand/**'
       - 'src/**'
       - 'migrations/**'
       - 'tests/helpers/database.mjs'
       - 'package-lock.json'
       - 'tests/commercial-android-launcher.test.mjs'
+      - '.github/workflows/android-debug.yml'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'public/brand/**'
       - '.github/workflows/android-debug.yml'
   workflow_dispatch:
 

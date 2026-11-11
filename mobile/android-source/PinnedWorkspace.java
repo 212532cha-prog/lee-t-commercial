@@ -1,6 +1,7 @@
 package my.leet.warehouse;
 
 import android.util.AtomicFile;
+import android.os.SystemClock;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
@@ -22,15 +23,23 @@ public final class PinnedWorkspace {
     private final WarehouseApiTransport transport;
     private static final long DEVICE_LIFETIME = 400L * 24 * 60 * 60 * 1000;
     private final AtomicFile deviceFile;
+    private final AdministratorStorage administratorStorage;
+    private JSONObject administratorRecord;
+    private long nextInventorySync;
     private final ExecutorService requests = Executors.newSingleThreadExecutor();
     private final ExecutorService eventThread = Executors.newSingleThreadExecutor();
     private final Map<String, EventJob> streams = new ConcurrentHashMap<>();
     private volatile boolean closed;
 
-    PinnedWorkspace(WebView view, String origin, String fingerprint, String route) throws Exception {
+    PinnedWorkspace(WebView view, String origin, String fingerprint, String route, boolean administrator) throws Exception {
         this.view = view;
         transport = new WarehouseApiTransport(origin, fingerprint, route);
         deviceFile = new AtomicFile(new File(view.getContext().getNoBackupFilesDir(), "warehouse-" + fingerprint));
+        administratorStorage = administrator ? new AdministratorStorage(view.getContext(), origin, fingerprint) : null;
+        if (administratorStorage != null) {
+            administratorRecord = administratorStorage.read();
+            if (administratorRecord != null) transport.restoreSession(administratorRecord.getString("token"));
+        }
         try {
             String[] stored = new String(deviceFile.readFully(), StandardCharsets.UTF_8).split("\n", 2);
             if (stored.length == 2 && Long.parseLong(stored[0]) > System.currentTimeMillis()) {
@@ -38,6 +47,33 @@ public final class PinnedWorkspace {
             }
         } catch (IOException | NumberFormatException ignored) {
             // The employee will pair again if the device token cannot be read.
+        }
+    }
+
+    private void clearAdministrator() {
+        administratorRecord = null;
+        if (administratorStorage != null) administratorStorage.clear();
+    }
+
+    private void rememberAdministrator(String body) throws Exception {
+        if (administratorStorage == null) return;
+        clearAdministrator();
+        String token = transport.sessionToken();
+        if (token == null || !"admin".equals(new JSONObject(body).getJSONObject("user").getString("role"))) return;
+        JSONObject record = AdministratorStorage.newSession(token);
+        administratorStorage.save(record);
+        administratorRecord = record;
+        nextInventorySync = 0;
+    }
+
+    private void refreshOfflineInventory() throws Exception {
+        if (administratorRecord == null || SystemClock.elapsedRealtime() < nextInventorySync) return;
+        nextInventorySync = SystemClock.elapsedRealtime() + 60_000;
+        WarehouseIdentityProbe.Response result = transport.request("GET", "/api/products/offline-inventory", null, null);
+        if (result.status == 401 || result.status == 403) {
+            clearAdministrator();
+        } else if (result.status == 200) {
+            administratorStorage.saveInventory(administratorRecord.getString("token"), new JSONObject(result.body));
         }
     }
 
@@ -64,15 +100,29 @@ public final class PinnedWorkspace {
     public void request(String id, String method, String path, String body, String csrf) {
         if (closed || !id.matches("[0-9]{1,12}")) return;
         requests.execute(() -> {
+            if ("/api/auth/logout".equals(path) && "POST".equals(method)) clearAdministrator();
             try {
                 WarehouseIdentityProbe.Response response = transport.request(method, path, body, csrf);
+                if (administratorRecord != null &&
+                        (!administratorRecord.optString("token").equals(transport.sessionToken()) ||
+                        (response.status == 401 && ("/api/me".equals(path) || "/api/state".equals(path))))) {
+                    clearAdministrator();
+                }
                 if ("/api/auth/login".equals(path) && response.status == 200) {
                     String device = transport.deviceToken();
                     if (device != null) {
                         try { saveDevice(device); } catch (IOException ignored) {}
                     }
+                    try { rememberAdministrator(response.body); } catch (Exception ignored) {
+                        // Secure storage may be unavailable. The online session still works.
+                    }
                 }
                 deliver(id, "response", response.status, response.body);
+                if ("/api/state".equals(path) && response.status == 200) {
+                    try { refreshOfflineInventory(); } catch (Exception ignored) {
+                        // A failed synchronization must not affect live warehouse access.
+                    }
+                }
             } catch (Exception failure) {
                 deliver(id, "error", 0, "");
             }

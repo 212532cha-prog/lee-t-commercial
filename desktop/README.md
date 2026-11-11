@@ -23,7 +23,7 @@ This remains a test installer: activation still uses a previously imported test 
 
 Failures contain only a stable error code; hardware/connection/signature exceptions and submitted values are never returned or logged. Stdin is limited to 16 KiB of actual UTF-8 bytes, decoded strictly. Unknown actions and fields are refused, including attempts to supply configuration or file paths. Invalid imports and failed online requests preserve the existing license. Missing or invalid local licensing returns activation-required; it never unlocks the warehouse.
 
-`node --test tests/commercial-desktop-activation.test.mjs` covers offline activation, altered/wrong-device refusal with byte-for-byte license preservation, online signing, operation overlap, stable installation identity, input bounds, hostile fields and the actual child process's output/exit behavior. This protocol is not yet connected to the native window or the installer. Production cloud signing configuration remains a separate acceptance gate.
+`node --test tests/commercial-desktop-activation.test.mjs` covers offline activation, altered/wrong-device refusal with byte-for-byte license preservation, online signing, operation overlap, stable installation identity, input bounds, hostile fields and the actual child process's output/exit behavior. The native activation window uses this protocol; the installer integration and production cloud signing remain separate acceptance gates.
 
 ## Installation permissions
 
@@ -31,4 +31,16 @@ The ordinary Windows app needs Users read/execute access to the installed progra
 
 `scripts/windows/Test-DirectoryPermissions.ps1` uses a disposable local standard account and an actual impersonated Windows token to check read/execute access, refuse program writes/injection and private configuration/license access, and confirm files remain unchanged. It also starts from existing explicit Users full-control grants. The account and files are removed in `finally`; production accounts and folders are never used by this test.
 
-The private activation bridge belongs to an elevated setup/repair context that can read protected configuration and update licensing. The ordinary working app must not be elevated or receive database credentials just to open the warehouse workspace. Activation UI integration must preserve that boundary.
+The private activation bridge belongs to an elevated setup/repair context that can read protected configuration and update licensing. The ordinary working app must not be elevated or receive database credentials just to open the warehouse workspace.
+
+## Native activation window candidate
+
+`LeeT.Warehouse.exe --activate` opens an English-first native WPF activation window without WebView2 or an external browser. Its only configuration location is `desktop/activation.private.json`. The entry requires administrator context, validates owner and write permissions of configuration, publisher public key, Node and bridge files and their parent directories, and refuses missing/untrusted settings. It cannot accept executable paths, endpoints or signing keys from command-line arguments or web content. `New-DesktopActivationConfig.ps1` prepares these settings for the future setup/repair caller; no database credentials are copied. An endpoint may be omitted for offline-only activation.
+
+The window provides a masked purchase-key field, offline device-request export and signed JSON import with native Windows file dialogs. Busy operations disable mutation controls, keys are cleared after submission, and Continue is enabled only after a fresh local status check verifies the license. Exit 0 means verified activation was explicitly accepted; closing returns 10 and invalid setup returns 3. Ordinary app startup remains the existing unprivileged workspace.
+
+The host starts only its bundled Node/bridge paths without a shell, transfers the envelope over stdin and allows only a small Windows environment plus the fixed configuration path into the child. It does not inherit Node injection, TLS overrides, database credentials or proxies. It serializes operations, bounds actual response bytes, validates exit/status agreement and enforces timeout/cancellation with child termination. Request export refuses installation and active-license locations.
+
+Native Windows checks exercise the real bridge/signatures with an isolated test device and issuer, the rendered WPF controls, bad imports, false success, private configuration ACLs, hostile child environment, malformed/oversized output and timeout/cancellation cleanup. Preview PNGs are generated from the actual WPF window. The test-only issuer/device implementation lives under `desktop/tests`; the installed entry always selects the production bridge and Windows hardware reader.
+
+This window is not yet invoked by the existing test-license installer. The next installation phase must supply embedded publisher trust, invoke activation during setup, handle cancellation/recovery and continue provisioning in the same flow. Actual hosted signing, release signing, full clean-machine installation and physical-device acceptance remain required; the candidate is not a commercial release.

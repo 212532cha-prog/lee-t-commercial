@@ -1,5 +1,6 @@
 const uuid = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
 const fragmentPrefix = '#pairing=';
+const warehousePrefix = '#warehouse=';
 const maximumLength = 4096;
 
 export function parsePairingFragment(fragment, { now = Date.now() } = {}) {
@@ -41,6 +42,26 @@ export function parsePairingQr(text, options) {
   const invitation = parsePairingFragment(url.hash, options);
   if (url.origin !== invitation.origin) throw Error('PAIRING_ORIGIN_MISMATCH');
   return invitation;
+}
+
+export function parseAdministratorQr(text) {
+  if (typeof text !== 'string' || text.length > maximumLength) throw Error('INVALID_ADMINISTRATOR_QR');
+  let url, identity;
+  try {
+    url = new URL(text);
+    if (!url.hash.startsWith(warehousePrefix)) throw Error();
+    identity = JSON.parse(decodeURIComponent(url.hash.slice(warehousePrefix.length)));
+  } catch {
+    throw Error('INVALID_ADMINISTRATOR_QR');
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search ||
+      identity?.schema !== 1 || Object.keys(identity).length !== 4 ||
+      typeof identity.serverId !== 'string' || !uuid.test(identity.serverId) ||
+      typeof identity.certificateFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(identity.certificateFingerprint)) {
+    throw Error('INVALID_ADMINISTRATOR_QR');
+  }
+  if (url.origin !== identity.origin) throw Error('PAIRING_ORIGIN_MISMATCH');
+  return { origin: identity.origin, serverId: identity.serverId, certificateFingerprint: identity.certificateFingerprint };
 }
 
 export async function verifyPairingServer({ origin, serverId, certificateFingerprint }, send = fetch) {

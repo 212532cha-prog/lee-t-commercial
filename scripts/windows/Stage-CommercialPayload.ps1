@@ -38,6 +38,7 @@ $pgDirectories=@('bin','lib','share')
 foreach($name in $pgDirectories){
  if(-not (Test-Path -LiteralPath (Join-Path $postgres $name) -PathType Container)){throw 'The PostgreSQL binary distribution is incomplete.'}
 }
+if(-not (Test-Path -LiteralPath (Join-Path $postgres 'share\timezone\Asia\Kuala_Lumpur') -PathType Leaf)){throw 'The PostgreSQL time zone distribution is incomplete.'}
 $temporary=$output+'.staging-'+[guid]::NewGuid().ToString('N')
 $previousPath=$env:Path
 try{

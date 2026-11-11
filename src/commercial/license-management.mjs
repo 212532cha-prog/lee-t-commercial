@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { transaction } from '../db/database.mjs';
-import { activationCodeHash, createFollowupActivationCodeIn, createInitialActivationCodeIn } from './activation-ledger.mjs';
+import { activationCodeHash, createFollowupActivationCodeIn, createInitialActivationCodeIn, redeemActivationCodeIn } from './activation-ledger.mjs';
+import { validateDeviceRequest } from './license.mjs';
 
 export async function initializeLicenseManagement(pool) {
   await pool.query(`
@@ -80,30 +81,59 @@ export async function confirmLicensePayment(pool, operator, { customerId, receip
   });
 }
 
-export async function issuePaidActivation(pool, operator, { customerId, paymentId, expiresAt, priorLicenseId, request }) {
+async function lockPayment(db, customerId, paymentId) {
+  const { rows: [payment] } = await db.query(
+    'SELECT * FROM lee_t_management_payments WHERE id=$1 AND customer_id=$2 FOR UPDATE', [paymentId, customerId],
+  );
+  if (!payment) throw Error('Confirmed payment for this customer required.');
+  return payment;
+}
+
+async function issueForPayment(db, actor, payment, { customerId, paymentId, expiresAt, priorLicenseId, request }) {
+  if (payment.code_hash) {
+    const { rows: [prior] } = await db.query(
+      'SELECT redeemed_at,expires_at > clock_timestamp() AS live FROM lee_t_activation_codes WHERE code_hash=$1 FOR UPDATE',
+      [payment.code_hash],
+    );
+    if (prior.redeemed_at || prior.live) throw Error('Payment already has an activation code.');
+  }
+  const input = {
+    customerId, paid: true, version: payment.version, kind: payment.kind, expiresAt,
+    priorLicenseId, request, paymentReference: payment.receipt_reference, approvedBy: actor,
+  };
+  const issue = payment.kind === 'initial' ? createInitialActivationCodeIn : createFollowupActivationCodeIn;
+  const code = await issue(db, input);
+  await db.query('UPDATE lee_t_management_payments SET code_hash=$2 WHERE id=$1', [paymentId, activationCodeHash(code)]);
+  await audit(db, { customerId, paymentId, actor, action: payment.code_hash ? 'code_reissued' : 'code_issued' });
+  return { code, expiresAt };
+}
+
+export async function issuePaidActivation(pool, operator, input) {
+  const actor = customerScope(operator, input.customerId);
+  if (operator.role !== 'issuer') throw Error('Issuer role required.');
+  return transaction(pool, async db => issueForPayment(db, actor,
+    await lockPayment(db, input.customerId, input.paymentId), input));
+}
+
+export async function signPaidOfflineLicense(pool, operator, input, issuer) {
+  const { customerId, paymentId, request } = input;
   const actor = customerScope(operator, customerId);
   if (operator.role !== 'issuer') throw Error('Issuer role required.');
+  validateDeviceRequest(request);
   return transaction(pool, async db => {
-    const { rows: [payment] } = await db.query(
-      'SELECT * FROM lee_t_management_payments WHERE id=$1 AND customer_id=$2 FOR UPDATE', [paymentId, customerId],
-    );
-    if (!payment) throw Error('Confirmed payment for this customer required.');
+    const payment = await lockPayment(db, customerId, paymentId);
     if (payment.code_hash) {
-      const { rows: [prior] } = await db.query(
-        'SELECT redeemed_at,expires_at > clock_timestamp() AS live FROM lee_t_activation_codes WHERE code_hash=$1 FOR UPDATE',
-        [payment.code_hash],
+      const { rows: [record] } = await db.query(
+        'SELECT redeemed_at FROM lee_t_activation_codes WHERE code_hash=$1', [payment.code_hash],
       );
-      if (prior.redeemed_at || prior.live) throw Error('Payment already has an activation code.');
+      if (record.redeemed_at) {
+        return redeemActivationCodeIn(db, payment.code_hash, request, issuer, { allowExpiredSigned: true });
+      }
     }
-    const input = {
-      customerId, paid: true, version: payment.version, kind: payment.kind, expiresAt,
-      priorLicenseId, request, paymentReference: payment.receipt_reference, approvedBy: actor,
-    };
-    const issue = payment.kind === 'initial' ? createInitialActivationCodeIn : createFollowupActivationCodeIn;
-    const code = await issue(db, input);
-    await db.query('UPDATE lee_t_management_payments SET code_hash=$2 WHERE id=$1', [paymentId, activationCodeHash(code)]);
-    await audit(db, { customerId, paymentId, actor, action: payment.code_hash ? 'code_reissued' : 'code_issued' });
-    return { code, expiresAt };
+    const { code } = await issueForPayment(db, actor, payment, {
+      ...input, expiresAt: new Date(Date.now() + 600_000),
+    });
+    return redeemActivationCodeIn(db, activationCodeHash(code), request, issuer);
   });
 }
 

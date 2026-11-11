@@ -4,12 +4,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.CookieManager;
-import java.net.CookiePolicy;
-import java.net.HttpCookie;
+import java.net.CookieHandler;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
 
@@ -18,7 +17,15 @@ final class WarehouseApiTransport {
     private final URI origin;
     private final SSLSocketFactory sockets;
     private final String route;
-    private final CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ORIGINAL_SERVER);
+    private volatile String sessionToken;
+    private volatile String deviceToken;
+
+    static void useNativeCookieOwnership() {
+        // Capacitor installs a process-wide WebView cookie handler even with its
+        // JavaScript cookie plugin disabled. It can append a second session
+        // cookie to the explicit header below, which the server rejects.
+        CookieHandler.setDefault(null);
+    }
 
     WarehouseApiTransport(String origin, String fingerprint, String route) throws Exception {
         this.route = route;
@@ -36,25 +43,56 @@ final class WarehouseApiTransport {
     private static final String SESSION_COOKIE = "__Host-warehouse_session";
     private static final String DEVICE_COOKIE = "__Host-leet_device";
 
-    void restoreDevice(String token) throws IOException {
-        if (token == null || !token.matches("[A-Za-z0-9_-]{43}")) return;
-        cookies.put(origin, Collections.singletonMap("Set-Cookie", Collections.singletonList(
-            DEVICE_COOKIE + "=" + token + "; Path=/; Secure; HttpOnly")));
+    void restoreDevice(String token) {
+        if (validToken(token)) deviceToken = token;
     }
 
     String deviceToken() {
-        return cookieValue(DEVICE_COOKIE);
+        return deviceToken;
     }
 
-    private String cookieValue(String name) {
-        String value = null;
-        for (HttpCookie cookie : cookies.getCookieStore().get(origin)) {
-            if (!name.equals(cookie.getName()) || !cookie.getSecure() || !cookie.isHttpOnly() ||
-                !"/".equals(cookie.getPath()) || !cookie.getValue().matches("[A-Za-z0-9_-]{43}")) continue;
-            if (value != null) return null;
-            value = cookie.getValue();
+    void restoreSession(String token) {
+        if (validToken(token)) sessionToken = token;
+    }
+
+    String sessionToken() {
+        return sessionToken;
+    }
+
+    boolean hasSession() {
+        return sessionToken != null;
+    }
+
+    private static boolean validToken(String token) {
+        return token != null && token.matches("[A-Za-z0-9_-]{43}");
+    }
+
+    // Only the pinned warehouse can supply these two host-only cookies.
+    private static String responseToken(Map<String, List<String>> headers, String name, String current) {
+        String next = current;
+        boolean seen = false;
+        for (Map.Entry<String, List<String>> header : headers.entrySet()) {
+            if (!"Set-Cookie".equalsIgnoreCase(header.getKey())) continue;
+            for (String value : header.getValue()) {
+                String[] parts = value.split(";", -1);
+                String pair = parts[0].trim();
+                if (!pair.startsWith(name + "=")) continue;
+                if (seen) return null;
+                seen = true;
+                String token = pair.substring(name.length() + 1);
+                boolean secure = false, httpOnly = false, root = false, cleared = false;
+                for (int i = 1; i < parts.length; i++) {
+                    String attribute = parts[i].trim();
+                    if (attribute.equalsIgnoreCase("Secure")) secure = true;
+                    else if (attribute.equalsIgnoreCase("HttpOnly")) httpOnly = true;
+                    else if (attribute.equalsIgnoreCase("Path=/")) root = true;
+                    else if (attribute.equalsIgnoreCase("Max-Age=0")) cleared = true;
+                    else if (attribute.regionMatches(true, 0, "Domain=", 0, 7)) return null;
+                }
+                next = secure && httpOnly && root && !cleared && validToken(token) ? token : null;
+            }
         }
-        return value;
+        return next;
     }
 
     byte[] readPhoto(String path) throws Exception {
@@ -110,7 +148,9 @@ final class WarehouseApiTransport {
             if (status >= 300 && status < 400) throw new IOException("Warehouse API redirects are disabled");
             try (InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
                 String json = stream == null ? "" : new String(readBytes(stream, MAX_JSON_BYTES), StandardCharsets.UTF_8);
-                cookies.put(url, connection.getHeaderFields());
+                Map<String, List<String>> headers = connection.getHeaderFields();
+                sessionToken = responseToken(headers, SESSION_COOKIE, sessionToken);
+                deviceToken = responseToken(headers, DEVICE_COOKIE, deviceToken);
                 return new WarehouseIdentityProbe.Response(status, url.toString(), json);
             }
         } finally {
@@ -122,9 +162,7 @@ final class WarehouseApiTransport {
         HttpsURLConnection connection = WarehouseIdentityProbe.open(url, sockets, route);
         connection.setRequestProperty("Accept", accept);
         connection.setRequestProperty("Origin", origin.toString());
-        // CookieManager can emit RFC 2965 quotes and $Version for Max-Age cookies.
-        // The warehouse expects the same unquoted name=value tokens sent by a browser.
-        String session = cookieValue(SESSION_COOKIE);
+        String session = sessionToken;
         String device = deviceToken();
         if (session != null || device != null) {
             String header = session == null ? "" : SESSION_COOKIE + "=" + session;

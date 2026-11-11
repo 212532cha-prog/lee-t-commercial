@@ -47,7 +47,8 @@ public class WarehouseActivity extends Activity {
             try {
                 URI endpoint = new URI(url);
                 String remoteOrigin = "https://" + endpoint.getRawAuthority();
-                pinned = new PinnedWorkspace(workspace, remoteOrigin, fingerprint, getIntent().getStringExtra("route"));
+                pinned = new PinnedWorkspace(workspace, remoteOrigin, fingerprint, getIntent().getStringExtra("route"),
+                    getIntent().getBooleanExtra("administrator", false));
                 workspace.addJavascriptInterface(pinned, "LeeTWarehouse");
                 warehouseOrigin = WarehouseIdentityProbe.httpsOrigin(LOCAL_ORIGIN);
                 url = LOCAL_ORIGIN + "/" + (endpoint.getRawFragment() == null ? "" : "#" + endpoint.getRawFragment());
