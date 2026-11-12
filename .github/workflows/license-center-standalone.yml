@@ -100,6 +100,7 @@ jobs:
         shell: powershell
         run: |
           $setup=Join-Path $env:RUNNER_TEMP 'license-center-setup\LEE-T-License-Center-Setup.exe'
+          ./scripts/windows/Test-PackageBranding.ps1 -SetupExecutable $setup -ProductName 'LEE T License Center' -ExpectedVersion '1.0.0.0'
           $hash=(Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText(($setup+'.sha256'),($hash+'  LEE-T-License-Center-Setup.exe'+"`n"),[Text.UTF8Encoding]::new($false))
       - uses: actions/upload-artifact@v4

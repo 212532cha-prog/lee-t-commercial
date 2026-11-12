@@ -19,17 +19,18 @@ try{
  [IO.File]::WriteAllText($fixture,@'
 import net from 'node:net';
 import {existsSync,readFileSync,writeFileSync} from 'node:fs';
-const [port,ready,log,released]=process.argv.slice(2);
+const [port,ready,log,released,stderr]=process.argv.slice(2);
 const server=net.createServer(socket=>socket.destroy());
 server.listen(Number(port),'127.0.0.1',()=>writeFileSync(ready,'ready'));
 const deadline=setTimeout(()=>{process.exitCode=1;server.close();clearInterval(watch)},45000);
 const watch=setInterval(()=>{
- if(existsSync(log)&&readFileSync(log,'utf8').includes('PostgreSQL start attempt 1 failed')){
+ const output=[log,stderr].map(path=>existsSync(path)?readFileSync(path,'utf8'):'').join('\n');
+ if(output.includes('PostgreSQL start attempt 1 failed')){
   server.close(()=>writeFileSync(released,'released'));clearInterval(watch);clearTimeout(deadline);
  }
 },25);
 '@,[Text.UTF8Encoding]::new($false))
- $blocker=Start-Process (Get-Command node.exe).Source -ArgumentList @(('"'+$fixture+'"'),$port,('"'+$ready+'"'),('"'+$log+'"'),('"'+$released+'"')) -PassThru
+ $blocker=Start-Process (Get-Command node.exe).Source -ArgumentList @(('"'+$fixture+'"'),$port,('"'+$ready+'"'),('"'+$log+'"'),('"'+$released+'"'),('"'+$stderr+'"')) -PassThru
  for($attempt=0;$attempt -lt 100 -and -not (Test-Path $ready);$attempt++){
   if($blocker.HasExited){throw 'Could not start the isolated occupied-port fixture.'};Start-Sleep -Milliseconds 50
  }
@@ -38,7 +39,7 @@ const watch=setInterval(()=>{
  $starter=Start-Process powershell.exe -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',('"'+$helper+'"'),'-ServiceName',$name,'-PostgresDirectory',('"'+$pg+'"'),'-ClusterDirectory',('"'+(Join-Path $database 'cluster')+'"')) -PassThru -RedirectStandardOutput $log -RedirectStandardError $stderr
  if(-not $starter.WaitForExit(90000)){$starter.Kill();throw 'Bounded issuer startup did not finish.'}
  if($starter.ExitCode -ne 0){Get-Content $log,$stderr | Write-Output;throw 'Issuer startup did not recover after the real first-start failure.'}
- if(-not (Test-Path $released) -or (Get-Content $log -Raw) -notmatch 'PostgreSQL start attempt 1 failed'){
+ if(-not (Test-Path $released) -or ((Get-Content $log,$stderr -Raw) -join "`n") -notmatch 'PostgreSQL start attempt 1 failed'){
   throw 'The regression must exercise an actual failed start before recovery.'
  }
  if((Get-Service $name).Status -ne 'Running'){throw 'The recovered service is not running.'}
