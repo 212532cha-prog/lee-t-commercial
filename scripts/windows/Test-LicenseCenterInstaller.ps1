@@ -90,6 +90,7 @@ try{
  Write-Output 'PASS: standalone installer, TLS login, wrong-password rejection, paid signing, independent signature, cold service start, crash recovery, repair, preserved-data reinstall and full removal.'
 }catch{
  # These logs contain setup status and generic backend error stages, never private configuration.
+ if(Test-Path -LiteralPath $install){Get-ChildItem -LiteralPath $install -Recurse -File | Select-Object -ExpandProperty FullName | Write-Output}
  $installLog=Join-Path $install 'license-center-install.log'
  if(Test-Path -LiteralPath $installLog){Get-Content -LiteralPath $installLog | Write-Output}
  $serviceLog=Join-Path $root 'license-center-service.log'
@@ -97,6 +98,6 @@ try{
  Get-ChildItem -LiteralPath $fixture -Filter 'setup-*.log' | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object {Get-Content -LiteralPath $_.FullName -Tail 100 | Write-Output}
  throw
 }finally{
- if(Test-Path (Join-Path $install 'unins000.exe')){Uninstall-Issuer $true}
+ if((Test-Path (Join-Path $root 'installation.json')) -and (Test-Path (Join-Path $install 'unins000.exe'))){Uninstall-Issuer $true}
  if(Test-Path $fixture){Remove-Item $fixture -Recurse -Force}
 }
