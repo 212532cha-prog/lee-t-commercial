@@ -3,7 +3,7 @@ export function money(value){let [whole,fraction='']=String(value??'0').split('.
 export function createAdminUI({api,render,message,getLang,getSession,escape:e,onPage,onProduct,onUser,onSignedOut}){
  const state={mode:'home',data:null,error:'',busy:false,costs:[],cursor:null,profile:null,masters:null,products:[],job:null,reportIds:null,includeTrashed:false,draft:null};let poll,epoch=0;
  const t=k=>words[getLang()]?.[k]||words.en[k]||k,admin=()=>getSession()?.user.role==='admin',button=(label,a,extra='')=>`<button type="button" class="secondary" data-admin="${a}" ${state.busy?'disabled':''} ${extra}>${e(t(label))}</button>`;
- async function open(mode='home',options={}){state.mode=mode;state.error='';state.data=null;const current=++epoch;clearTimeout(poll);try{
+ async function open(mode='home',options={}){state.mode=mode;state.error='';state.data=null;const current=++epoch;clearTimeout(poll);render();try{
   if(mode==='home'){const data=await api('/api/dashboard');if(current!==epoch)return;state.data=data;}
   if(mode==='costs'){const r=await api('/api/costs');if(current!==epoch)return;state.costs=r.products;state.cursor=r.nextCursor;state.data=true;}
   if(mode==='profile'){const r=await api('/api/profile');if(current!==epoch)return;state.profile=r.user;state.data=true;}

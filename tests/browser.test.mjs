@@ -243,3 +243,16 @@ test('late team response cannot pull a phone back from another module',async()=>
  assert.equal(await page.locator('.app-layout').getAttribute('data-page'),'profile');
  assert.equal(await page.locator('#admin-profile').isVisible(),true);
 });
+
+test('phone module change replaces the previous form with loading feedback until new data is ready',async()=>{
+ const page=await login('CTL LEE',true,'en');
+ await nav(page,'profile');await page.locator('#admin-profile').waitFor();
+ let entered,release;const started=new Promise(resolve=>entered=resolve),gate=new Promise(resolve=>release=resolve);
+ await page.route('**/api/master-data',async route=>{entered();await gate;await route.continue();});
+ await nav(page,'exports');await started;
+ try {
+  assert.equal(await page.locator('#admin-profile').isVisible(),false,'Previous account form must not remain under the export tab');
+  assert.equal(await page.locator('.main-panel').getByText('Loading…',{exact:true}).isVisible(),true);
+ } finally {release();}
+ await page.locator('#admin-export').waitFor();
+});

@@ -213,6 +213,7 @@ public class WarehouseFlowTest {
             String svg = new String(Files.readAllBytes(output.toPath()), java.nio.charset.StandardCharsets.UTF_8);
             assertTrue("Download must contain the real vector QR", svg.contains("<svg") && svg.contains("<path")); output.delete();
             nav("exports");
+            waitFor("!!document.querySelector('#admin-export') && !document.querySelector('#admin-export button').disabled");
             js("document.querySelector('#admin-export').requestSubmit()");
             waitFor("!!document.querySelector('a[href^=\"/api/exports/\"]')");
             String exportPath = (String)new org.json.JSONTokener(js("document.querySelector('a[href^=\"/api/exports/\"]').getAttribute('href')")).nextValue();
