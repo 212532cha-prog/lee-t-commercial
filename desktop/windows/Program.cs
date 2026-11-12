@@ -56,7 +56,7 @@ internal static class Program
 
     internal static Window CreateWindow()
     {
-        var window = new Window { Title = "LEE T Warehouse", Width = 1200, Height = 800, MinWidth = 420, MinHeight = 440 };
+        var window = new Window { Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/LeeT.Warehouse;component/Brand/lee-t.ico")), Title = "LEE T Warehouse", Width = 1200, Height = 800, MinWidth = 420, MinHeight = 440 };
         var grid = new Grid();
         var browser = new WebView2 { Name = "WarehouseBrowser", Visibility = Visibility.Collapsed };
         var status = new TextBlock { Text = "Starting the warehouse…", TextWrapping = TextWrapping.Wrap };

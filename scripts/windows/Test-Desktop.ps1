@@ -157,6 +157,22 @@ try {
  Remove-Item -LiteralPath $bootstrap -Recurse -Force
  Write-Output 'Publisher replacement: explicit unactivated-only rollover preserves identity, resumes safely and refuses existing licenses.'
  $activationExe=Join-Path $activationPayload 'desktop\LeeT.Warehouse.exe'
+ Add-Type -AssemblyName System.Drawing
+ $actualIcon=[Drawing.Icon]::ExtractAssociatedIcon($activationExe)
+ if($null -eq $actualIcon){throw 'Warehouse EXE is missing its shell icon.'}
+ $expectedIcon=[Drawing.Icon]::new((Join-Path $root 'public\brand\lee-t.ico'),$actualIcon.Size)
+ $actualBitmap=$actualIcon.ToBitmap(); $expectedBitmap=$expectedIcon.ToBitmap()
+ try{
+  if($actualBitmap.Size -ne $expectedBitmap.Size){throw 'Warehouse EXE has the wrong shell icon size.'}
+  for($x=0;$x -lt $actualBitmap.Width;$x++){
+   for($y=0;$y -lt $actualBitmap.Height;$y++){
+    if($actualBitmap.GetPixel($x,$y).ToArgb() -ne $expectedBitmap.GetPixel($x,$y).ToArgb()){
+     throw 'Warehouse EXE shell icon does not match the LEE T brand.'
+    }
+   }
+  }
+ }finally{$actualBitmap.Dispose();$expectedBitmap.Dispose();$actualIcon.Dispose();$expectedIcon.Dispose()}
+ Write-Output 'Warehouse EXE: extracted shell icon matches the LEE T brand pixel for pixel.'
  $activationEntry=Start-Process -FilePath $activationExe -ArgumentList '--activate' -PassThru
  [void]$activationEntry.Handle
  for($attempt=0;$attempt -lt 100;$attempt++){

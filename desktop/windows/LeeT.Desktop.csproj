@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <ApplicationIcon>../../public/brand/lee-t.ico</ApplicationIcon>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
@@ -10,5 +11,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
     <Resource Include="../../public/brand/lee-t-logo.jpg" Link="Brand/lee-t-logo.jpg" />
+    <Resource Include="../../public/brand/lee-t.ico" Link="Brand/lee-t.ico" />
   </ItemGroup>
 </Project>
