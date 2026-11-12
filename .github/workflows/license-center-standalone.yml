@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - 'desktop/license-center/**'
+      - 'scripts/windows/**'
       - 'installer/windows/LeeT-LicenseCenter-Setup.iss'
       - 'public/brand/**'
       - '.github/workflows/license-center-standalone.yml'
