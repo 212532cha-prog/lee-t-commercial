@@ -89,6 +89,27 @@ try{
  if((Test-Path $root) -or (Get-Service LeeTLicenseCenter,LeeTLicensePostgreSQL17 -ErrorAction SilentlyContinue)){throw 'Full uninstall retained issuer data or services.'}
  Write-Output 'PASS: standalone installer, TLS login, wrong-password rejection, paid signing, independent signature, cold service start, crash recovery, repair, preserved-data reinstall and full removal.'
 }catch{
+ # Diagnose startup failures before reporting the original failure. Never print
+ # issuer configuration, passwords, keys, or SQL statements.
+ Get-CimInstance Win32_Service -Filter "Name='LeeTLicensePostgreSQL17'" -ErrorAction SilentlyContinue |
+  Select-Object Name,State,StartName,PathName | Format-List | Out-String | Write-Output
+ Get-NetTCPConnection -LocalPort 55435,8444 -ErrorAction SilentlyContinue |
+  Select-Object LocalAddress,LocalPort,State,OwningProcess | Format-Table | Out-String | Write-Output
+ foreach($port in @(55435,8444)){
+  $probe=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,$port)
+  try{$probe.Start();Write-Output ("Port "+$port+" permits a loopback bind.")}
+  catch{Write-Output ("Port "+$port+" loopback bind failed: "+$_.Exception.Message)}
+  finally{$probe.Stop()}
+ }
+ & netsh.exe int ipv4 show excludedportrange protocol=tcp | Write-Output
+ $since=(Get-Date).AddMinutes(-3)
+ Get-WinEvent -FilterHashtable @{LogName='System';ProviderName='Service Control Manager';StartTime=$since} -ErrorAction SilentlyContinue |
+  Where-Object {$_.Message -match 'LeeTLicensePostgreSQL17'} | Select-Object -First 8 |
+  ForEach-Object {Write-Output $_.Message}
+ Get-WinEvent -FilterHashtable @{LogName='Application';ProviderName='PostgreSQL';StartTime=$since} -ErrorAction SilentlyContinue |
+  Select-Object -First 12 | ForEach-Object {
+   $_.Message -split '[\r\n]+' | Where-Object {$_ -match '(?i)FATAL|PANIC|could not|couldn.t|failed to start|could not start|service' -and $_ -notmatch '(?i)STATEMENT:|PASSWORD\s+''|postgresql://'} | Write-Output
+  }
  # These logs contain setup status and generic backend error stages, never private configuration.
  if(Test-Path -LiteralPath $install){Get-ChildItem -LiteralPath $install -Recurse -File | Select-Object -ExpandProperty FullName | Write-Output}
  $installLog=Join-Path $install 'license-center-install.log'
