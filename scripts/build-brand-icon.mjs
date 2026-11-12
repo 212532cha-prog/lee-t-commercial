@@ -7,9 +7,26 @@ import { brandArtwork } from './brand-artwork.mjs';
 export async function buildBrandIcon(source, target) {
   const sizes = [16, 24, 32, 48, 64, 128, 256];
   const image = await brandArtwork(source);
-  const frames = await Promise.all(sizes.map(size => sharp(image).resize(size, size, {
-    fit: 'contain', background: '#ffffff',
-  }).ensureAlpha().png().toBuffer()));
+  const frames = await Promise.all(sizes.map(async size => {
+    const raster = sharp(image).resize(size, size, { fit: 'contain', background: '#ffffff' }).ensureAlpha();
+    if (size === 256) return raster.png().toBuffer();
+    // Native 32-bit DIB frames avoid differences between the shell and GDI+
+    // loaders for small PNG-compressed icons. Keep PNG for the 256px frame.
+    const rgba = await raster.raw().toBuffer();
+    const maskStride = Math.ceil(size / 32) * 4;
+    const dib = Buffer.alloc(40 + size * size * 4 + maskStride * size);
+    dib.writeUInt32LE(40, 0);
+    dib.writeInt32LE(size, 4); dib.writeInt32LE(size * 2, 8);
+    dib.writeUInt16LE(1, 12); dib.writeUInt16LE(32, 14);
+    dib.writeUInt32LE(size * size * 4, 20);
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const source = (y * size + x) * 4;
+      const target = 40 + ((size - 1 - y) * size + x) * 4;
+      dib[target] = rgba[source + 2]; dib[target + 1] = rgba[source + 1];
+      dib[target + 2] = rgba[source]; dib[target + 3] = rgba[source + 3];
+    }
+    return dib;
+  }));
   const header = Buffer.alloc(6 + 16 * frames.length);
   header.writeUInt16LE(1, 2);
   header.writeUInt16LE(frames.length, 4);

@@ -206,3 +206,11 @@ jobs:
           name: LEE-T-Warehouse-0.8.5-Windows
           path: ${{ runner.temp }}/leet-commercial-rc/*
           if-no-files-found: error
+
+      - name: Retain strict icon comparison diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LEE-T-Windows-icon-diagnostics
+          path: ${{ runner.temp }}/leet-icon-diagnostics/*
+          if-no-files-found: ignore
