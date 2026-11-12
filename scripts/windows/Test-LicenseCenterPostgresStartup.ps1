@@ -37,7 +37,11 @@ const watch=setInterval(()=>{
  if(-not (Test-Path $ready)){throw 'Occupied-port fixture did not become ready.'}
  $helper=Join-Path $PSScriptRoot 'Start-LicenseCenterPostgres.ps1'
  $starter=Start-Process powershell.exe -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',('"'+$helper+'"'),'-ServiceName',$name,'-PostgresDirectory',('"'+$pg+'"'),'-ClusterDirectory',('"'+(Join-Path $database 'cluster')+'"')) -PassThru -RedirectStandardOutput $log -RedirectStandardError $stderr
+ [void]$starter.Handle
  if(-not $starter.WaitForExit(90000)){$starter.Kill();throw 'Bounded issuer startup did not finish.'}
+ $starter.WaitForExit()
+ $code=if($null -eq $starter.ExitCode){'<null>'}else{[string]$starter.ExitCode}
+ Write-Output ('Startup helper exit code: '+$code+'; service status: '+(Get-Service $name).Status)
  if($starter.ExitCode -ne 0){Get-Content $log,$stderr | Write-Output;throw 'Issuer startup did not recover after the real first-start failure.'}
  if(-not (Test-Path $released) -or ((Get-Content $log,$stderr -Raw) -join "`n") -notmatch 'PostgreSQL start attempt 1 failed'){
   throw 'The regression must exercise an actual failed start before recovery.'
