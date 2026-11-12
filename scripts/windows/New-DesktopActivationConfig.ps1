@@ -7,9 +7,11 @@ param(
  [Parameter(Mandatory=$true)][string]$IssuerKeyId,
  [string]$ActivationEndpoint,
  [switch]$Resume,
- [switch]$InstallerCache
+ [switch]$InstallerCache,
+ [switch]$ReplaceUnactivatedIssuer
 )
 $ErrorActionPreference='Stop'
+if($ReplaceUnactivatedIssuer -and -not $InstallerCache){throw 'Issuer replacement requires an unactivated installer cache.'}
 . (Join-Path $PSScriptRoot 'Protect-Directory.ps1')
 $payload=(Resolve-Path -LiteralPath $PayloadDirectory).Path
 if(-not [IO.Path]::IsPathRooted($LicenseDirectory) -or -not (Test-Path -LiteralPath $IssuerPublicKey -PathType Leaf) -or
@@ -71,11 +73,48 @@ if($resuming){
  }
  $saved=(Get-Content -LiteralPath $savedConfig -Raw -Encoding UTF8 | ConvertFrom-Json).Environment
  if(@($saved.PSObject.Properties).Count -ne $environment.Count){throw 'Activation setup settings have changed.'}
+ $issuerChanged=$saved.LEE_T_ISSUER_KEY_ID -cne $environment.LEE_T_ISSUER_KEY_ID -or
+  (Get-FileHash -LiteralPath $publicKey).Hash -ne (Get-FileHash -LiteralPath $IssuerPublicKey).Hash
  foreach($name in $environment.Keys){
-  if($saved.$name -cne $environment[$name]){throw 'Activation setup settings have changed.'}
+  if($saved.$name -cne $environment[$name] -and -not ($issuerChanged -and $ReplaceUnactivatedIssuer -and $name -eq 'LEE_T_ISSUER_KEY_ID')){
+   throw 'Activation setup settings have changed.'
+  }
  }
- if((Get-FileHash -LiteralPath $publicKey).Hash -ne (Get-FileHash -LiteralPath $IssuerPublicKey).Hash){
-  throw 'The issuer public key does not match the original activation setup.'
+ if($issuerChanged){
+  if(-not $ReplaceUnactivatedIssuer){throw 'The issuer public key does not match the original activation setup.'}
+  if(Test-Path -LiteralPath (Join-Path $licensePath 'license.json')){throw 'Activated installations cannot replace their issuer trust.'}
+  # A newly rebuilt installer may replace obsolete public trust only before
+  # activation. Keep the installation ID and every license verification rule.
+  $token=[guid]::NewGuid().ToString('N')
+  $keyTemporary=Join-Path $trust ($token+'.key.tmp')
+  $configTemporary=Join-Path $trust ($token+'.config.tmp')
+  $keyBackup=Join-Path $trust ($token+'.key.backup')
+  $configBackup=Join-Path $trust ($token+'.config.backup')
+  $restoreFailed=$false
+  try{
+   Copy-Item -LiteralPath $IssuerPublicKey -Destination $keyTemporary
+   [IO.File]::WriteAllText($configTemporary,(@{Environment=$environment}|ConvertTo-Json -Depth 3),[Text.UTF8Encoding]::new($false))
+   Set-Acl -LiteralPath $keyTemporary -AclObject (Get-Acl -LiteralPath $publicKey)
+   Set-Acl -LiteralPath $configTemporary -AclObject (Get-Acl -LiteralPath $savedConfig)
+   [IO.File]::Replace($keyTemporary,$publicKey,$keyBackup)
+   [IO.File]::Replace($configTemporary,$savedConfig,$configBackup)
+  }catch{
+   try{
+    if(Test-Path -LiteralPath $keyBackup){Copy-Item -LiteralPath $keyBackup -Destination $publicKey -Force}
+    if(Test-Path -LiteralPath $configBackup){Copy-Item -LiteralPath $configBackup -Destination $savedConfig -Force}
+   }catch{
+    $restoreFailed=$true
+    throw 'Issuer trust update needs repair. Original protected recovery copies were retained.'
+   }
+   throw
+  }finally{
+   $cleanup=@($keyTemporary,$configTemporary)
+   if(-not $restoreFailed){$cleanup+=@($keyBackup,$configBackup)}
+   foreach($temporaryFile in $cleanup){
+    if(Test-Path -LiteralPath $temporaryFile){Remove-Item -LiteralPath $temporaryFile -Force}
+   }
+  }
+  Write-Output 'Unactivated installer cache updated to the bundled issuer. Device identity preserved.'
  }
  Write-Output 'Existing protected LEE T activation setup preserved.'
  if(-not $InstallerCache){return}

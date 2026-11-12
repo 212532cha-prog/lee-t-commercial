@@ -20,7 +20,7 @@ AppId=LeeTCommercialWarehouse
 SetupMutex=LeeTCommercialWarehouseSetup
 AppName=LEE T Commercial
 AppVersion=0.8.5
-AppVerName=LEE T Commercial 0.8.5 RC2
+AppVerName=LEE T Commercial 0.8.5 RC3
 VersionInfoDescription=LEE T Commercial release candidate
 Uninstallable=yes
 UninstallDisplayName=LEE T Commercial
@@ -39,7 +39,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#BuildOutput}
 #ifdef CommercialRelease
-OutputBaseFilename=LEE-T-Commercial-0.8.5-RC2-Setup
+OutputBaseFilename=LEE-T-Commercial-0.8.5-RC3-Setup
 #else
 #ifdef OfflineIssuerPublicKey
 OutputBaseFilename=LeeT-Offline-Setup
@@ -148,7 +148,7 @@ begin
     ' -PayloadDirectory ' + AddQuotes(Bootstrap) +
     ' -LicenseDirectory ' + AddQuotes(InstallLicenseDir) +
     ' -IssuerPublicKey ' + AddQuotes(InstallIssuerKey) +
-    ' -IssuerKeyId ' + AddQuotes(InstallIssuerKeyId) + ' -InstallerCache';
+    ' -IssuerKeyId ' + AddQuotes(InstallIssuerKeyId) + ' -InstallerCache -ReplaceUnactivatedIssuer';
   if not Exec(PowerShell, Arguments, Bootstrap, SW_HIDE, ewWaitUntilTerminated, ExitCode) then Exit;
   if ExitCode <> 0 then begin
 #ifdef OfflineIssuerPublicKey
