@@ -93,6 +93,36 @@ jobs:
           profile: pixel_2
           disable-animations: true
           script: node mobile/run-emulator-tests.mjs
+      - name: Build the actual release variant for acceptance
+        env:
+          LEET_ACCEPTANCE_KEYSTORE: ${{ runner.temp }}/leet-acceptance.p12
+        run: |
+          keytool -genkeypair -keystore "$LEET_ACCEPTANCE_KEYSTORE" -storetype PKCS12 -storepass acceptance-only -keypass acceptance-only -alias acceptance -keyalg RSA -keysize 3072 -validity 2 -dname "CN=Acceptance Only"
+          node mobile/prepare-release-acceptance.mjs
+          cd mobile/android
+          ./gradlew --no-daemon assembleRelease assembleReleaseAndroidTest
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify app/build/outputs/apk/release/app-release.apk
+          if "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/release/app-release.apk | grep -q application-debuggable; then
+            echo 'Release APK must not be debuggable'; exit 1
+          fi
+      - name: Test all warehouse workflows in the release APK
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: node mobile/run-emulator-tests.mjs --release
+      - name: Stage the accepted release for private publisher signing
+        run: |
+          mkdir -p "$RUNNER_TEMP/leet-release-signing"
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/leet-release-signing/LEE-T-Warehouse-acceptance-only.apk"
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" "$RUNNER_TEMP/leet-release-signing/apksigner.jar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LEE-T-Warehouse-release-for-private-signing
+          path: ${{ runner.temp }}/leet-release-signing/*
+          if-no-files-found: error
       - name: Retain Android test reports
         if: always()
         uses: actions/upload-artifact@v4
