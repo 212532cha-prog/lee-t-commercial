@@ -99,10 +99,16 @@ public class WarehouseFlowTest {
         input(selector,args.getString("token"));
         js("document.querySelector("+JSONObject.quote(selector)+").form.requestSubmit()");
     }
+    private IntentFilter documentIntent(String action) throws Exception {
+        IntentFilter filter = new IntentFilter(action);
+        filter.addCategory(Intent.CATEGORY_OPENABLE);
+        filter.addDataType("*/*");
+        return filter;
+    }
     private File saveFile(String path, String name) throws Exception {
         File output = new File(instrumentation.getTargetContext().getCacheDir(), name);
         Intent result = new Intent().setData(Uri.fromFile(output));
-        Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(new IntentFilter(Intent.ACTION_CREATE_DOCUMENT), new Instrumentation.ActivityResult(Activity.RESULT_OK,result),true);
+        Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(documentIntent(Intent.ACTION_CREATE_DOCUMENT), new Instrumentation.ActivityResult(Activity.RESULT_OK,result),true);
         try {
             js("window.qaDownload=null;import('https://appassets.androidplatform.net/native-transport.js').then(async m=>window.qaDownload=await m.warehouseDownload(" + JSONObject.quote(path) + ")).catch(e=>window.qaDownload={error:String(e)})");
             waitFor("window.qaDownload!==null");
@@ -126,7 +132,7 @@ public class WarehouseFlowTest {
     private void chooseFile(String selector, File file) throws Exception {
         Uri uri = androidx.core.content.FileProvider.getUriForFile(instrumentation.getTargetContext(), "my.leet.warehouse.fileprovider", file);
         Intent result = new Intent().setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(new IntentFilter(Intent.ACTION_OPEN_DOCUMENT),new Instrumentation.ActivityResult(Activity.RESULT_OK,result),true);
+        Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(documentIntent(Intent.ACTION_OPEN_DOCUMENT),new Instrumentation.ActivityResult(Activity.RESULT_OK,result),true);
         try {
             tap(selector);
             waitFor("document.querySelector(" + JSONObject.quote(selector) + ").files.length===1");
