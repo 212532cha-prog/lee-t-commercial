@@ -1,11 +1,12 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import { brandArtwork } from './brand-artwork.mjs';
 
 // Package the existing LEE T artwork as a multi-resolution Windows icon.
 export async function buildBrandIcon(source, target) {
   const sizes = [16, 24, 32, 48, 64, 128, 256];
-  const image = await readFile(source);
+  const image = await brandArtwork(source);
   const frames = await Promise.all(sizes.map(size => sharp(image).resize(size, size, {
     fit: 'contain', background: '#ffffff',
   }).ensureAlpha().png().toBuffer()));

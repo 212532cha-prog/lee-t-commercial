@@ -53,7 +53,7 @@ internal sealed class LicenseWindow : Window
         var locale = new ComboBox { ItemsSource = new[] { "English", "简体中文", "Bahasa Melayu" }, SelectedIndex = 0, Width = 145, HorizontalAlignment = HorizontalAlignment.Right };
         content.Children.Add(locale);
         var logo = new BitmapImage(new Uri("pack://application:,,,/lee-t-logo.jpg"));
-        Icon = logo;
+        Icon = BitmapFrame.Create(new Uri("pack://application:,,,/LeeT-License-Center;component/Brand/lee-t.ico"));
         content.Children.Add(new Image { Source = logo, Width = 68, Height = 48, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left });
         content.Children.Add(new TextBlock { Text = Title, FontSize = 32, FontWeight = FontWeights.SemiBold });
         var subtitle = new TextBlock { Foreground = Muted, Margin = new Thickness(0, 3, 0, 18) };

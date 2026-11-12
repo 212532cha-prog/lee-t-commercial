@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
+import { brandArtwork } from '../scripts/brand-artwork.mjs';
 
 const cli = fileURLToPath(new URL('./node_modules/@capacitor/cli/bin/capacitor', import.meta.url));
 const run = (...args) => execFileSync(process.execPath, [cli, ...args], { stdio: 'inherit' });
@@ -31,12 +33,29 @@ if (!workspaceManifest.includes('android:name="android.permission.CAMERA"')) {
   workspaceManifest = workspaceManifest.replace('</manifest>',
     '    <uses-permission android:name="android.permission.CAMERA" />\n</manifest>');
 }
-workspaceManifest = workspaceManifest.replace(/android:(icon|roundIcon)="@mipmap\/ic_launcher(?:_round)?"/g,
-  (_entry, name) => 'android:' + name + '="@drawable/leet_launcher"');
-if (!workspaceManifest.includes('android:icon="@drawable/leet_launcher"')) throw Error('Cannot configure the LEE T launcher icon.');
+workspaceManifest = workspaceManifest.replace(/android:(icon|roundIcon)="@(?:mipmap\/ic_launcher(?:_round)?|drawable\/leet_launcher|mipmap\/leet_launcher)"/g,
+  (_entry, name) => 'android:' + name + '="@mipmap/leet_launcher"');
+if (!workspaceManifest.includes('android:icon="@mipmap/leet_launcher"')) throw Error('Cannot configure the LEE T launcher icon.');
 writeFileSync(manifestPath, workspaceManifest);
+// Keep the artwork inside Android's adaptive-icon safe area so launcher masks do not crop it.
 mkdirSync(main + '/res/drawable-nodpi', { recursive: true });
-copyFileSync('../public/brand/lee-t-logo.jpg', main + '/res/drawable-nodpi/leet_launcher.jpg');
+for (const path of ['drawable-nodpi/leet_launcher.jpg', 'drawable-nodpi/leet_launcher.png', 'drawable-v26/leet_launcher.xml']) {
+  rmSync(main + '/res/' + path, { force: true });
+}
+const logo = await brandArtwork('../public/brand/lee-t-logo.jpg');
+await sharp(logo).resize(176, 176, { fit: 'contain', background: '#ffffff' })
+  .extend({ top: 56, bottom: 56, left: 56, right: 56, background: '#ffffff' })
+  .png().toFile(main + '/res/drawable-nodpi/leet_foreground.png');
+mkdirSync(main + '/res/mipmap-nodpi', { recursive: true });
+await sharp(logo).resize(192, 192, { fit: 'contain', background: '#ffffff' })
+  .png().toFile(main + '/res/mipmap-nodpi/leet_launcher.png');
+mkdirSync(main + '/res/mipmap-anydpi-v26', { recursive: true });
+writeFileSync(main + '/res/mipmap-anydpi-v26/leet_launcher.xml', `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+  <background android:drawable="@android:color/white" />
+  <foreground android:drawable="@drawable/leet_foreground" />
+</adaptive-icon>
+`);
 const java = main + '/java/my/leet/warehouse';
 for (const name of ['MainActivity.java', 'WarehouseActivity.java', 'WarehouseIdentityProbe.java', 'WarehouseDiscovery.java', 'WarehouseApiTransport.java', 'PinnedWorkspace.java', 'WarehouseWorkspacePlugin.java', 'AdministratorStorage.java']) {
   copyFileSync('android-source/' + name, java + '/' + name);
@@ -59,7 +78,7 @@ copyFileSync('../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chines
 // Instrument the exact generated application, including its bundled WebView assets.
 const appGradle = 'android/app/build.gradle';
 let gradle = readFileSync(appGradle, 'utf8');
-gradle = gradle.replace(/versionCode \d+/, 'versionCode 80504').replace(/versionName "[^"]+"/, 'versionName "0.8.5-mobile.4"');
+gradle = gradle.replace(/versionCode \d+/, 'versionCode 80505').replace(/versionName "[^"]+"/, 'versionName "0.8.5"');
 if (!gradle.includes('androidx.test.runner.AndroidJUnitRunner')) throw Error('Android instrumentation runner missing');
 writeFileSync(appGradle, gradle);
 const androidTests = 'android/app/src/androidTest/java/my/leet/warehouse';

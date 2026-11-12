@@ -165,7 +165,7 @@ if($Commercial -and $certificate.LeafCertificate){
 if(-not $NoStart){Start-Service $serviceName}
 Write-Output ('Installed service. LAN address: '+$origin)
 if($Commercial -and $certificate.LeafCertificate){Write-Output ('Administrator on this PC: https://localhost:'+$Port)}
-if($Commercial){Write-Output 'Employees: open LEE T Mobile on the warehouse Wi-Fi and scan the pairing code. The native app verifies the warehouse identity.'}
+if($Commercial){Write-Output 'Employees: open LEE T Warehouse on the warehouse Wi-Fi and scan the pairing code. The native app verifies the warehouse identity.'}
 elseif($certificate.RootCertificate){Write-Output ('Browser-only test certificate: '+$certificate.RootCertificate)}
 Write-Output 'Phone/HID, actual shutdown/reboot, external storage and new-computer restore still require the acceptance checklist. Do not open router/public ports.'
 

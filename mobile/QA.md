@@ -1,6 +1,6 @@
 # Android mobile acceptance
 
-Version: `0.8.5-mobile.4`, package `my.leet.warehouse`, minimum Android API 26.
+Version: `0.8.5` (version code `80505`), package `my.leet.warehouse`, minimum Android API 26.
 
 The Android workflow retains an APK only after the packaged WebView tests pass. It never uses `continue-on-error` for build, transport, or instrumentation checks. The complete repository CI separately runs on Node 22 and 24 with PostgreSQL 17.
 
@@ -22,3 +22,5 @@ The test fixture's control endpoint exists only in `emulator-fixture.mjs`. It is
 Automated emulator checks do not prove camera autofocus, real QR recognition under workshop lighting, OEM permission screens, Wi-Fi/mDNS behavior on the user's router, or a physical printer. Verify these on the target phone before describing the build as fully accepted for sale. In particular, scan both connection QR types, perform one real product scan for each business flow, disable Wi-Fi and view the timestamped saved inventory, then reconnect.
 
 The existing workflow builds a debug-signed APK. It is not a store release signed with a retained owner publishing key. Replacing an older APK signed with another key may require uninstalling the phone app, which removes phone pairing/session/offline cache. Warehouse data remains on its computer. Do not advise deleting the warehouse database or issuer keys to update the phone app.
+
+Release packaging additionally builds the non-debuggable release variant and reruns the complete warehouse instrumentation against it. CI uses a two-day ephemeral acceptance certificate; this artifact must be re-signed privately with the retained owner release key before distribution. All original debug and library instrumentation remain enabled.

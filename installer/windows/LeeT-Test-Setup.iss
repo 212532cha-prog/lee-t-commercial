@@ -19,12 +19,14 @@ SetupIconFile=..\..\public\brand\lee-t.ico
 #ifdef CommercialRelease
 AppId=LeeTCommercialWarehouse
 SetupMutex=LeeTCommercialWarehouseSetup
-AppName=LEE T Commercial
+AppName=LEE T Warehouse
 AppVersion=0.8.5
-AppVerName=LEE T Commercial 0.8.5 RC3
-VersionInfoDescription=LEE T Commercial release candidate
+AppVerName=LEE T Warehouse 0.8.5
+VersionInfoDescription=LEE T Warehouse Installer
+VersionInfoProductName=LEE T Warehouse
+AppPublisher=LEE T
 Uninstallable=yes
-UninstallDisplayName=LEE T Commercial
+UninstallDisplayName=LEE T Warehouse
 UninstallDisplayIcon={app}\desktop\LeeT.Warehouse.exe
 #else
 AppId=LeeTCommercialWarehouseTest
@@ -40,7 +42,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#BuildOutput}
 #ifdef CommercialRelease
-OutputBaseFilename=LEE-T-Commercial-0.8.5-RC3-Setup
+OutputBaseFilename=LEE-T-Warehouse-Setup
 #else
 #ifdef OfflineIssuerPublicKey
 OutputBaseFilename=LeeT-Offline-Setup
