@@ -107,7 +107,10 @@ if($RemoveData){
     throw 'The warehouse certificates require review before full removal.'
    }
    foreach($path in @(('Cert:\LocalMachine\Root\'+$ca.Thumbprint),('Cert:\LocalMachine\My\'+$ca.Thumbprint),('Cert:\LocalMachine\My\'+$leaf.Thumbprint))){
-    if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Force -ErrorAction Stop}
+    if(Test-Path -LiteralPath $path){
+     if((Get-Item -LiteralPath $path).HasPrivateKey){Remove-Item -LiteralPath $path -DeleteKey -Force -ErrorAction Stop}
+     else{Remove-Item -LiteralPath $path -Force -ErrorAction Stop}
+    }
    }
   }finally{$ca.Dispose();$leaf.Dispose()}
  }
