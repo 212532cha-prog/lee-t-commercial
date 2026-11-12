@@ -96,7 +96,8 @@ final class WarehouseApiTransport {
     }
 
     byte[] readPhoto(String path) throws Exception {
-        if (!path.matches("/api/products/[a-fA-F0-9-]{36}/photo")) return null;
+        if (!path.matches("/api/products/[a-fA-F0-9-]{36}/(?:photo|qr)") &&
+            !path.matches("/api/me/avatar(?:\\?version=[0-9]+)?") && !path.equals("/api/commercial/administrator-qr")) return null;
         HttpsURLConnection connection = connection(endpoint(path), "image/jpeg,image/png");
         try {
             if (connection.getResponseCode() != 200) return null;
@@ -124,9 +125,14 @@ final class WarehouseApiTransport {
     }
 
     WarehouseIdentityProbe.Response request(String method, String path, String body, String csrf) throws Exception {
-        if (!"GET".equals(method) && !"POST".equals(method) && !"PUT".equals(method) && !"DELETE".equals(method)) {
+        if (!"GET".equals(method) && !"POST".equals(method) && !"PUT".equals(method) && !"PATCH".equals(method) && !"DELETE".equals(method)) {
             throw new IllegalArgumentException("Unsupported warehouse API method");
         }
+        return request(method, path, body, csrf, java.util.Collections.emptyMap());
+    }
+
+    WarehouseIdentityProbe.Response request(String method, String path, String body, String csrf, Map<String, String> headers) throws Exception {
+        if (!java.util.Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE").contains(method)) throw new IllegalArgumentException("Unsupported method");
         URI url = endpoint(path);
         byte[] payload = body == null ? null : body.getBytes(StandardCharsets.UTF_8);
         if (payload != null && ("GET".equals(method) || payload.length > MAX_JSON_BYTES)) {
@@ -136,6 +142,10 @@ final class WarehouseApiTransport {
         try {
             connection.setRequestMethod(method);
             if (csrf != null) connection.setRequestProperty("X-CSRF-Token", csrf);
+            for (var header : headers.entrySet()) {
+                if (!java.util.Arrays.asList("X-Confirm-Permanent", "X-Import-Preview").contains(header.getKey())) throw new IllegalArgumentException("Invalid mobile header");
+                connection.setRequestProperty(header.getKey(), header.getValue());
+            }
             if (payload != null) {
                 connection.setDoOutput(true);
                 connection.setRequestProperty("Content-Type", "application/json");
@@ -144,18 +154,58 @@ final class WarehouseApiTransport {
                     output.write(payload);
                 }
             }
-            int status = connection.getResponseCode();
-            if (status >= 300 && status < 400) throw new IOException("Warehouse API redirects are disabled");
-            try (InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
-                String json = stream == null ? "" : new String(readBytes(stream, MAX_JSON_BYTES), StandardCharsets.UTF_8);
-                Map<String, List<String>> headers = connection.getHeaderFields();
-                sessionToken = responseToken(headers, SESSION_COOKIE, sessionToken);
-                deviceToken = responseToken(headers, DEVICE_COOKIE, deviceToken);
-                return new WarehouseIdentityProbe.Response(status, url.toString(), json);
-            }
+            return jsonResponse(connection, url);
+
         } finally {
             connection.disconnect();
         }
+    }
+
+    private WarehouseIdentityProbe.Response jsonResponse(HttpsURLConnection connection, URI url) throws Exception {
+        int status = connection.getResponseCode();
+        if (status >= 300 && status < 400) throw new IOException("Warehouse API redirects are disabled");
+        try (InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
+            String json = stream == null ? "" : new String(readBytes(stream, MAX_JSON_BYTES), StandardCharsets.UTF_8);
+            Map<String, List<String>> headers = connection.getHeaderFields();
+            sessionToken = responseToken(headers, SESSION_COOKIE, sessionToken);
+            deviceToken = responseToken(headers, DEVICE_COOKIE, deviceToken);
+            return new WarehouseIdentityProbe.Response(status, url.toString(), json);
+        }
+    }
+
+    WarehouseIdentityProbe.Response upload(String path, String type, java.io.File file, String csrf) throws Exception {
+        boolean photo = path.matches("/api/products/[a-fA-F0-9-]{36}/photo") || path.equals("/api/me/avatar");
+        if (!(photo && (type.equals("image/jpeg") || type.equals("image/png")) && file.length() <= 5 * 1024 * 1024) &&
+            !(path.equals("/api/backups/upload") && type.equals("application/octet-stream"))) {
+            throw new IllegalArgumentException("Invalid mobile upload");
+        }
+        URI url = endpoint(path);
+        HttpsURLConnection connection = connection(url, "application/json");
+        try {
+            connection.setRequestMethod(photo ? "PUT" : "POST");
+            connection.setRequestProperty("Content-Type", type);
+            if (csrf != null) connection.setRequestProperty("X-CSRF-Token", csrf);
+            connection.setDoOutput(true);
+            connection.setFixedLengthStreamingMode(file.length());
+            try (InputStream input = new java.io.FileInputStream(file); OutputStream output = connection.getOutputStream()) {
+                byte[] buffer = new byte[64 * 1024];
+                for (int count; (count = input.read(buffer)) != -1;) output.write(buffer, 0, count);
+            }
+            return jsonResponse(connection, url);
+        } finally { connection.disconnect(); }
+    }
+
+    String download(String path, java.io.File file) throws Exception {
+        URI url = endpoint(path);
+        HttpsURLConnection connection = connection(url, "*/*");
+        try {
+            if (connection.getResponseCode() != 200) throw new IOException("File download rejected");
+            try (InputStream input = connection.getInputStream(); OutputStream output = new java.io.FileOutputStream(file)) {
+                byte[] buffer = new byte[64 * 1024];
+                for (int count; (count = input.read(buffer)) != -1;) output.write(buffer, 0, count);
+            }
+            return connection.getContentType();
+        } finally { connection.disconnect(); }
     }
 
     private HttpsURLConnection connection(URI url, String accept) throws Exception {

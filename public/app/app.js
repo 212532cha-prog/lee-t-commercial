@@ -4,7 +4,7 @@ import {createBackupUI} from './backup.js';
 import {createStockUI} from './stock.js';
 import {createCatalogUI} from './catalog.js';
 import {parsePairingFragment} from './pairing.js';
-import {warehouseFetch,warehouseEvents} from './native-transport.js';
+import {warehouseFetch,warehouseEvents,nativeWorkspace,administratorEntry,offlineStatus,syncOfflineInventory,closeWorkspace,warehouseUpload,warehouseDownload} from './native-transport.js';
 const $=s=>document.querySelector(s),escape=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const savedLanguage=sessionStorage.getItem('leet-language');
 let lang=['en','zh','ms'].includes(savedLanguage)?savedLanguage:'en',session=null,page='home',employees=[],flags={maintenance:false,adminBackupRequired:false};
@@ -15,6 +15,26 @@ const pairingLabels={
  en:{pairDiagnostic:'Download LAN diagnostic configuration',pairInvite:'Show pairing QR',pairUnbind:'Unbind device',pairSignout:'Force sign-out',pairHint:'Scan this code with the intended device and sign in within two minutes.',pairRequired:'Scan an administrator’s pairing QR, then sign in on the authorized device.',pairAlready:'This employee has a paired device. Unbind it before changing devices.',pairConfirm:'Continue with this device action? The employee’s session will end.'},
  ms:{pairDiagnostic:'Muat turun konfigurasi diagnostik LAN',pairInvite:'Papar QR pautan',pairUnbind:'Nyahpaut peranti',pairSignout:'Paksa log keluar',pairHint:'Imbas dengan peranti yang hendak dipautkan dan log masuk dalam dua minit.',pairRequired:'Imbas QR daripada pentadbir dan log masuk pada peranti yang dibenarkan.',pairAlready:'Peranti telah dipautkan. Nyahpaut sebelum menukar peranti.',pairConfirm:'Teruskan tindakan peranti? Sesi kakitangan akan tamat.'},
 };
+const mobileWords={
+ en:{adminLogin:'Administrator sign-in',adminHint:'Use your administrator username and password. Pairing does not sign you in.',employeeLogin:'Employee sign-in',employeeHint:'Use your employee account. Your first sign-in requires an employee pairing code.',back:'Back to access screen',sync:'Sync offline inventory',saved:'Offline inventory saved:',syncing:'Saving offline inventory…',failed:'Offline inventory was not updated. Retry while the computer is running.',unavailable:'Secure storage is unavailable. Online access still works; offline inventory was not saved.',none:'Offline inventory has not been saved yet.',expired:'Saved administrator access expired. Sign in again.',retry:'Retry connection',offline:'Connection lost. Check Wi-Fi and the warehouse computer. Unsaved stock work has been interrupted.',download:'Preparing file… Choose a location to save it.',downloadFailed:'File could not be saved. Check the connection and phone storage, then retry.',fileSaved:'File saved',cancelled:'Save cancelled'},
+ zh:{adminLogin:'管理员登录',adminHint:'请输入管理员账号和密码；扫码连接不会自动登录账号。',employeeLogin:'员工登录',employeeHint:'请输入员工账号。此手机首次登录需要员工配对码。',back:'返回身份选择',sync:'同步离线库存',saved:'离线库存已保存：',syncing:'正在保存离线库存…',failed:'离线库存未更新，请在电脑运行时重试同步。',unavailable:'手机安全存储不可用。可在线使用，但未保存离线库存。',none:'尚未保存离线库存。',expired:'管理员登录记录已失效，请重新登录。',retry:'重新连接',offline:'连接已中断，请检查 Wi-Fi 和仓库电脑。未保存的库存作业已中断。',download:'正在准备文件…请选择保存位置。',downloadFailed:'文件保存失败，请检查连接及手机空间后重试。',fileSaved:'文件已保存',cancelled:'已取消保存'},
+ ms:{adminLogin:'Log masuk pentadbir',adminHint:'Masukkan akaun pentadbir dan kata laluan. Pemautan tidak melog masuk akaun.',employeeLogin:'Log masuk pekerja',employeeHint:'Gunakan akaun pekerja. Log masuk pertama memerlukan kod pemautan pekerja.',back:'Kembali ke pilihan akaun',sync:'Segerakkan inventori luar talian',saved:'Inventori tersimpan:',syncing:'Menyimpan inventori…',failed:'Inventori tidak dikemas kini. Cuba semula semasa komputer hidup.',unavailable:'Storan selamat tidak tersedia. Akses dalam talian masih berfungsi; inventori tidak disimpan.',none:'Inventori belum disimpan.',expired:'Akses pentadbir tamat. Log masuk semula.',retry:'Sambung semula',offline:'Sambungan terputus. Semak Wi-Fi dan komputer. Kerja stok belum disimpan telah terganggu.',download:'Menyediakan fail… Pilih lokasi simpan.',downloadFailed:'Fail tidak dapat disimpan. Semak sambungan dan ruang telefon.',fileSaved:'Fail disimpan',cancelled:'Simpanan dibatalkan'}
+};
+const mt=k=>mobileWords[lang][k];
+let mobileOffline=offlineStatus(),fileBusy=false;
+window.addEventListener('leet-offline-status',event=>{mobileOffline=event.detail;updateMobileStatus();});
+function updateMobileStatus(){
+ const el=$('#mobile-offline-state');
+ if(el){const state=mobileOffline.state||'none',time=Date.parse(mobileOffline.synchronizedAt);el.textContent=mt(state)+(state==='saved'&&Number.isFinite(time)?' '+new Date(time).toLocaleString(lang):'');}
+ const connection=$('#connection-state');if(connection)connection.hidden=!connectionLost;
+}
+async function saveMobileFile(path,print=false){
+ if(fileBusy)return;
+ fileBusy=true;message(mt('download'));
+ try{const result=await warehouseDownload(path,print);message(result.cancelled?mt('cancelled'):result.printing?'':mt('fileSaved'));}
+ catch{message(mt('downloadFailed'));}
+ finally{fileBusy=false;}
+}
 const t=k=>dictionary[lang][k]||extraLabels[lang][k]||pairingLabels[lang][k]||k;
 let pairingInvitation;
 if(location.hash.startsWith('#pairing=')){
@@ -43,15 +63,15 @@ function render(){
  const scanScope=['inbound','outbound'].includes(page)?'stock:'+stock.state.scopeEpoch:page==='count'?'count:'+count.state.task?.id+':'+count.state.run?.generation:'';
  const previous=$('.app-layout'),input=$('#scan-token')||$('#count-token'),preserve=input&&previous?.dataset.page===page&&previous?.dataset.owner===session?.user.id&&previous?.dataset.scanScope===scanScope?{id:input.id,value:input.value,start:input.selectionStart,end:input.selectionEnd,focused:document.activeElement===input}:null;
  document.documentElement.lang={zh:'zh-Hans',en:'en',ms:'ms'}[lang];$('.bottom')?.remove();
- if(!session){$('#app').innerHTML=`<section class="panel login"><h1>${t('login')}</h1><p class="muted">LEE T</p><form id="login">${field('username','username','text','','autocomplete="username" maxlength="64"')}${field('password','password','password','','autocomplete="current-password" maxlength="128"')}<button type="submit">${t('login')}</button></form></section>`;return;}
+ if(!session){$('#app').innerHTML=`<section class="panel login"><h1>${nativeWorkspace?mt(administratorEntry?'adminLogin':'employeeLogin'):t('login')}</h1><p class="muted">${nativeWorkspace?mt(administratorEntry?'adminHint':'employeeHint'):'LEE T'}</p><form id="login">${field('username','username','text','','autocomplete="username" maxlength="64"')}${field('password','password','password','','autocomplete="current-password" maxlength="128"')}<button type="submit">${t('login')}</button></form>${nativeWorkspace?`<button type="button" class="secondary" data-action="access">${mt('back')}</button>`:''}</section>`;return;}
  const user=session.user,counting=user.role==='employee'&&!!flags.task,restricted=flags.maintenance||flags.adminBackupRequired||counting;
  const pages=restricted?(user.role==='admin'?['backups']:counting&&!flags.maintenance?['count']:[]):user.role==='admin'?['home','products','inbound','outbound','count','reports','costs','exports','team','backups','profile']:['home','products','inbound','outbound','count','profile'];
  const nav=pages.map(k=>`<button class="nav-button ${page===k?'selected':''}" data-page="${k}">${t(k)}</button>`).join('');
  const locked=restricted&&!(page==='backups'&&user.role==='admin')&&!(counting&&page==='count'&&!flags.maintenance);
  const content=locked?`<p class="notice">${lang==='zh'?(flags.maintenance?'系统正在维护，业务写入已暂停。':counting?'请进入当前盘点任务，其他业务已暂停。':'备份空间已满，请进入备份模块。'):lang==='ms'?'Penyelenggaraan atau tindakan tugasan/sandaran diperlukan.':'Maintenance, current task or backup action required.'}</p>`:page==='count'||page==='reports'?count.html():page==='backups'?backup.html():['inbound','outbound'].includes(page)?stock.html():page==='products'?catalog.html():page==='team'?team():adminUI.html();
- $('#app').innerHTML=`<div class="app-layout" data-page="${escape(page)}" data-owner="${escape(user.id)}" data-scan-scope="${escape(scanScope)}"><aside class="sidebar"><b>LEE T</b><nav>${nav}</nav></aside><div class="workspace"><div class="row spread"><div class="row">${user.hasAvatar&&user.role==='admin'&&!restricted?`<img class="profile-avatar small" src="/api/me/avatar?version=${user.profileVersion}" alt="Avatar">`:''}<div><h1>${escape(user.realName)}</h1><small>${t(user.role)}${user.role==='employee'?' · '+escape(user.username):''}</small></div></div><div class="row"><time id="server-clock"></time><button data-action="menu" class="secondary mobile-menu">${t('menu')}</button><button data-action="logout" class="secondary">${t('logout')}</button></div></div><section class="panel main-panel">${content}</section></div></div>`;
+ $('#app').innerHTML=`<div class="app-layout" data-page="${escape(page)}" data-owner="${escape(user.id)}" data-scan-scope="${escape(scanScope)}"><aside class="sidebar"><b>LEE T</b><nav>${nav}</nav></aside><div class="workspace"><div class="row spread"><div class="row">${user.hasAvatar&&user.role==='admin'&&!restricted?`<img class="profile-avatar small" src="/api/me/avatar?version=${user.profileVersion}" alt="Avatar">`:''}<div><h1>${escape(user.realName)}</h1><small>${t(user.role)}${user.role==='employee'?' · '+escape(user.username):''}</small></div></div><div class="row"><time id="server-clock"></time><button data-action="menu" class="secondary mobile-menu">${t('menu')}</button><button data-action="logout" class="secondary">${t('logout')}</button></div></div>${nativeWorkspace?`<div id="connection-state" class="notice" ${connectionLost?'':'hidden'}><p>${mt('offline')}</p><button type="button" data-action="reconnect">${mt('retry')}</button></div><div class="mobile-tools"><button type="button" class="secondary" data-action="access">${mt('back')}</button>${user.role==='admin'?`<p id="mobile-offline-state" aria-live="polite"></p><button type="button" class="secondary" data-action="sync-offline">${mt('sync')}</button>`:''}</div>`:''}<section class="panel main-panel">${content}</section></div></div>`;
  if(!restricted){const nav=document.createElement('nav');nav.className='bottom';nav.innerHTML=['home','products','inbound','outbound','count','profile'].map(k=>`<button class="${page===k?'selected':''}" data-page="${k}">${t(k)}</button>`).join('');document.body.append(nav);}
- catalog.mount();count.mount();if(['inbound','outbound'].includes(page))stock.mount();if(preserve){const next=document.getElementById(preserve.id);if(next){next.value=preserve.value;if(preserve.focused){next.focus();next.setSelectionRange(preserve.start,preserve.end);}}}updateClock();
+ catalog.mount();count.mount();if(['inbound','outbound'].includes(page))stock.mount();if(preserve){const next=document.getElementById(preserve.id);if(next){next.value=preserve.value;if(preserve.focused){next.focus();next.setSelectionRange(preserve.start,preserve.end);}}}updateClock();updateMobileStatus();
 }
 async function goPage(target,options={}){
  if(!session)return;if(flags.adminBackupRequired&&target!=='backups')target='backups';if(flags.maintenance&&target!=='backups'){render();return;}if(session.user.role==='employee'&&flags.task&&target!=='count'){message(lang==='zh'?'请先完成当前盘点任务。':'Complete the current stocktake first.');return;}
@@ -89,7 +109,18 @@ document.addEventListener('submit',async event=>{event.preventDefault();const bu
  const diagnostic=event.target.id==='login'&&['ORIGIN_REJECTED','INTERNAL_ERROR','INVALID_USERNAME','INVALID_JSON','JSON_REQUIRED','BODY_TOO_LARGE','TOO_MANY_ATTEMPTS'].includes(error.code);
  message(diagnostic?error.message+' ('+error.status+' '+error.code+')':error.message);
  }finally{if(button)button.disabled=!!(button.closest('#admin-export')&&adminUI.state.busy);}});
-document.addEventListener('click',async event=>{const button=event.target.closest('button');if(!button||button.disabled)return;try{if(await adminUI.click(button))return;if(await count.click(button))return;if(await backup.click(button))return;if(await stock.click(button))return;if(await catalog.click(button))return;if(button.dataset.page)await goPage(button.dataset.page);if(button.dataset.action==='menu')$('.sidebar')?.classList.toggle('mobile-open');if(button.dataset.action==='logout'){if(!stock.leave())return;count.leave();await api('/api/auth/logout',{method:'POST',data:{}});signedOut();}const id=button.dataset.id;if(button.dataset.pairing){
+document.addEventListener('click',event=>{
+ if(!nativeWorkspace)return;
+ const link=event.target.closest('a[href]');
+ if(!link)return;
+ const url=new URL(link.href,location.href);
+ if(url.origin===location.origin&&url.pathname.startsWith('/api/')){event.preventDefault();saveMobileFile(url.pathname+url.search);}
+});
+document.addEventListener('click',async event=>{const button=event.target.closest('button');if(!button||button.disabled)return;try{
+ if(nativeWorkspace&&button.dataset.action==='access'){if(stock.leave()){count.leave();closeWorkspace();}return;}
+ if(nativeWorkspace&&button.dataset.action==='sync-offline'){syncOfflineInventory();return;}
+ if(nativeWorkspace&&button.dataset.action==='reconnect'){await refreshState();if(!connectionLost)await goPage(page);return;}
+ if(await adminUI.click(button))return;if(await count.click(button))return;if(await backup.click(button))return;if(await stock.click(button))return;if(await catalog.click(button))return;if(button.dataset.page)await goPage(button.dataset.page);if(button.dataset.action==='menu')$('.sidebar')?.classList.toggle('mobile-open');if(button.dataset.action==='logout'){if(!stock.leave())return;count.leave();await api('/api/auth/logout',{method:'POST',data:{}});signedOut();}const id=button.dataset.id;if(button.dataset.pairing){
  const action=button.dataset.pairing;
  if(action!=='invite'&&!confirm(t('pairConfirm')))return;
  const result=await api(`/api/employees/${id}/pairing/${action}`,{method:'POST',data:{}});
@@ -107,6 +138,10 @@ window.addEventListener('pagehide',()=>{stock.stop();count.leave();});
 window.addEventListener('beforeunload',e=>{if(stock.state.dirty&&!stock.state.pending){e.preventDefault();e.returnValue='';}});
 setInterval(()=>{stock.tick();updateClock();},1000);
 
-async function refreshState(){if(!session)return;const next=await api('/api/state');connectionLost=false;const changed=next.maintenance!==flags.maintenance||next.adminBackupRequired!==flags.adminBackupRequired||next.task?.id!==flags.task?.id;serverOffset=new Date(next.serverTime).getTime()-Date.now();flags=next;if(changed&&(flags.maintenance||flags.adminBackupRequired)){stock.interrupt();count.interrupt();if(session.user.role==='admin'){page='backups';await backup.open();}}if(changed)render();}
-setInterval(()=>refreshState().catch(error=>{if(!connectionLost&&(!error.code||error.code==='INTERNAL_ERROR')){connectionLost=true;stock.interrupt();count.interrupt();}}),5000);
-function uploadFile(file,progress){return new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST','/api/backups/upload');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('X-CSRF-Token',session.csrf);xhr.upload.onprogress=e=>{if(e.lengthComputable)progress(Math.round(e.loaded/e.total*100));};xhr.onerror=()=>reject(Error(t('network')));xhr.onabort=()=>reject(Error(t('network')));xhr.onload=()=>{let body;try{body=JSON.parse(xhr.responseText);}catch{reject(Error(t('failed')));return;}if(xhr.status>=200&&xhr.status<300)resolve(body);else{const error=Error(body.error||t('failed'));error.code=body.error;reject(error);}};xhr.send(file);});}
+async function refreshState(){if(!session)return;const next=await api('/api/state');connectionLost=false;updateMobileStatus();const changed=next.maintenance!==flags.maintenance||next.adminBackupRequired!==flags.adminBackupRequired||next.task?.id!==flags.task?.id;serverOffset=new Date(next.serverTime).getTime()-Date.now();flags=next;if(changed&&(flags.maintenance||flags.adminBackupRequired)){stock.interrupt();count.interrupt();if(session.user.role==='admin'){page='backups';await backup.open();}}if(changed)render();}
+setInterval(()=>refreshState().catch(error=>{if(!connectionLost&&(!error.code||error.code==='INTERNAL_ERROR')){connectionLost=true;stock.interrupt();count.interrupt();updateMobileStatus();}}),5000);
+function uploadFile(file,progress){if(nativeWorkspace)return (async()=>{
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),600000);
+ try{const response=await warehouseUpload('/api/backups/upload',file,{headers:{'Content-Type':'application/octet-stream','X-CSRF-Token':session.csrf},signal:controller.signal,progress});const body=await response.json();if(!response.ok){const error=Error(body.error||t('failed'));error.code=body.error;throw error;}return body;}
+ finally{clearTimeout(timer);}
+ })();return new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST','/api/backups/upload');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('X-CSRF-Token',session.csrf);xhr.upload.onprogress=e=>{if(e.lengthComputable)progress(Math.round(e.loaded/e.total*100));};xhr.onerror=()=>reject(Error(t('network')));xhr.onabort=()=>reject(Error(t('network')));xhr.onload=()=>{let body;try{body=JSON.parse(xhr.responseText);}catch{reject(Error(t('failed')));return;}if(xhr.status>=200&&xhr.status<300)resolve(body);else{const error=Error(body.error||t('failed'));error.code=body.error;reject(error);}};xhr.send(file);});}

@@ -26,6 +26,95 @@ public class WarehouseActivity extends Activity {
     private PinnedWorkspace pinned;
     private String warehouseOrigin;
     private PermissionRequest pendingCamera;
+    private android.webkit.ValueCallback<android.net.Uri[]> fileSelection;
+    private java.io.File downloadFile;
+    private String downloadId;
+    private WebView printView;
+
+    private void showError() {
+        android.widget.LinearLayout panel = new android.widget.LinearLayout(this);
+        panel.setOrientation(android.widget.LinearLayout.VERTICAL);
+        panel.setPadding(32, 64, 32, 32);
+        android.widget.TextView text = new android.widget.TextView(this);
+        text.setText("Warehouse could not open / 无法打开仓库 / Gudang tidak dapat dibuka\n\nCheck Wi-Fi and keep the warehouse computer running.\n请检查 Wi-Fi，并保持仓库电脑运行。");
+        panel.addView(text);
+        android.widget.Button retry = new android.widget.Button(this);
+        retry.setText("Retry / 重试 / Cuba lagi");
+        retry.setOnClickListener(v -> recreate());
+        panel.addView(retry);
+        android.widget.Button back = new android.widget.Button(this);
+        back.setText("Back / 返回 / Kembali");
+        back.setOnClickListener(v -> finish());
+        panel.addView(back);
+        setContentView(panel);
+    }
+
+    void saveDownload(String id, java.io.File file, String contentType, boolean print) {
+        if (isFinishing() || isDestroyed() || downloadFile != null || printView != null) {
+            file.delete(); pinned.deliver(id, "error", 0, ""); return;
+        }
+        if (print) {
+            try {
+                if (file.length() > 2 * 1024 * 1024 || contentType == null || !contentType.startsWith("text/html")) throw new java.io.IOException();
+                String html = new String(java.nio.file.Files.readAllBytes(file.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+                printView = new WebView(this);
+                printView.setWebViewClient(new WebViewClient() {
+                    @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                        return pinned.resource(URI.create(request.getUrl().toString()));
+                    }
+                    @Override public void onPageFinished(WebView view, String url) {
+                        android.print.PrintManager printer = (android.print.PrintManager) getSystemService(PRINT_SERVICE);
+                        printer.print("LEE T QR labels", view.createPrintDocumentAdapter("LEE T QR labels"), new android.print.PrintAttributes.Builder().build());
+                        pinned.deliver(id, "response", 200, "{\"printing\":true}");
+                    }
+                });
+                printView.loadDataWithBaseURL(LOCAL_ORIGIN + "/", html, "text/html", "UTF-8", null);
+            } catch (Exception failure) { pinned.deliver(id, "error", 0, ""); }
+            finally { file.delete(); }
+            return;
+        }
+        try {
+            String type = contentType == null ? "application/octet-stream" : contentType.split(";", 2)[0];
+            String extension = type.equals("image/png") ? ".png" : type.equals("application/pdf") ? ".pdf" :
+                type.contains("spreadsheetml") ? ".xlsx" : type.equals("application/json") ? ".json" : ".whb";
+            downloadFile = file; downloadId = id;
+            android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(android.content.Intent.CATEGORY_OPENABLE).setType(type)
+                .putExtra(android.content.Intent.EXTRA_TITLE, "LEE-T-" + System.currentTimeMillis() + extension);
+            startActivityForResult(intent, 3);
+        } catch (RuntimeException failure) {
+            file.delete(); downloadFile = null; downloadId = null;
+            pinned.deliver(id, "error", 0, "");
+        }
+    }
+
+    @Override protected void onActivityResult(int code, int result, android.content.Intent data) {
+        super.onActivityResult(code, result, data);
+        if (code == 2 && fileSelection != null) {
+            fileSelection.onReceiveValue(result == RESULT_OK && data != null && data.getData() != null ? new android.net.Uri[]{data.getData()} : null);
+            fileSelection = null;
+        }
+        if (code == 3 && downloadFile != null) {
+            java.io.File file = downloadFile;
+            String id = downloadId;
+            downloadFile = null; downloadId = null;
+            if (result != RESULT_OK || data == null || data.getData() == null) {
+                file.delete(); pinned.deliver(id, "response", 200, "{\"cancelled\":true}"); return;
+            }
+            android.net.Uri target = data.getData();
+            new Thread(() -> {
+                try (java.io.InputStream input = new java.io.FileInputStream(file);
+                     java.io.OutputStream output = getContentResolver().openOutputStream(target, "wt")) {
+                    if (output == null) throw new java.io.IOException();
+                    byte[] buffer = new byte[64 * 1024];
+                    for (int count; (count = input.read(buffer)) != -1;) output.write(buffer, 0, count);
+                    output.flush();
+                    pinned.deliver(id, "response", 200, "{\"saved\":true}");
+                } catch (Exception failure) { pinned.deliver(id, "error", 0, ""); }
+                finally { file.delete(); }
+            }, "leet-save-file").start();
+        }
+    }
 
     private boolean isWarehouse(String url) {
         return warehouseOrigin.equals(WarehouseIdentityProbe.httpsOrigin(url));
@@ -37,7 +126,7 @@ public class WarehouseActivity extends Activity {
         String url = getIntent().getStringExtra("url");
         warehouseOrigin = WarehouseIdentityProbe.httpsOrigin(url);
         if (warehouseOrigin == null) {
-            finish();
+            showError();
             return;
         }
 
@@ -53,7 +142,7 @@ public class WarehouseActivity extends Activity {
                 warehouseOrigin = WarehouseIdentityProbe.httpsOrigin(LOCAL_ORIGIN);
                 url = LOCAL_ORIGIN + "/" + (endpoint.getRawFragment() == null ? "" : "#" + endpoint.getRawFragment());
             } catch (Exception error) {
-                finish();
+                showError();
                 return;
             }
         }
@@ -83,12 +172,26 @@ public class WarehouseActivity extends Activity {
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) {
-                    Toast.makeText(WarehouseActivity.this, "Could not load the warehouse. Check Wi-Fi and HTTPS trust.", Toast.LENGTH_LONG).show();
-                    finish();
+                    showError();
                 }
             }
         });
         workspace.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView view, android.webkit.ValueCallback<android.net.Uri[]> callback, FileChooserParams params) {
+                if (fileSelection != null) fileSelection.onReceiveValue(null);
+                fileSelection = callback;
+                try {
+                    String[] types = params.getAcceptTypes();
+                    android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT)
+                        .addCategory(android.content.Intent.CATEGORY_OPENABLE).setType("*/*");
+                    if (types.length > 0 && types[0].startsWith("image/")) intent.putExtra(android.content.Intent.EXTRA_MIME_TYPES, new String[]{"image/jpeg", "image/png"});
+                    startActivityForResult(intent, 2);
+                } catch (RuntimeException unavailable) {
+                    fileSelection.onReceiveValue(null); fileSelection = null;
+                    Toast.makeText(WarehouseActivity.this, "File picker unavailable / 无法选择文件", Toast.LENGTH_LONG).show();
+                }
+                return true;
+            }
             @Override
             public void onPermissionRequest(PermissionRequest request) {
                 if (!isWarehouse(request.getOrigin().toString()) ||
@@ -139,10 +242,15 @@ public class WarehouseActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (workspace != null) workspace.onResume();
+        if (printView != null) { printView.destroy(); printView = null; }
     }
 
     @Override
     protected void onDestroy() {
+        if (fileSelection != null) fileSelection.onReceiveValue(null);
+        fileSelection = null;
+        if (downloadFile != null) downloadFile.delete();
+        if (printView != null) printView.destroy();
         if (pendingCamera != null) pendingCamera.deny();
         pendingCamera = null;
         if (pinned != null) pinned.close();

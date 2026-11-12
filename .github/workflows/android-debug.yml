@@ -17,6 +17,8 @@ on:
     paths:
       - 'mobile/**'
       - 'public/brand/**'
+      - 'public/app/**'
+      - 'tests/commercial-mobile*.test.mjs'
       - '.github/workflows/android-debug.yml'
   workflow_dispatch:
 
@@ -26,7 +28,7 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:17
@@ -76,6 +78,26 @@ jobs:
           apk=app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | grep -F "package: name='my.leet.warehouse'"
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test the packaged app on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: node mobile/run-emulator-tests.mjs
+      - name: Retain Android test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lee-T-Mobile-Android-test-reports
+          path: mobile/android/app/build/reports/androidTests/
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: Lee-T-Mobile-debug-apk
