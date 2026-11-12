@@ -31,6 +31,8 @@ Name: "{autoprograms}\LEE T License Center"; Filename: "{app}\LeeT-License-Cente
 Name: "{autodesktop}\LEE T License Center"; Filename: "{app}\LeeT-License-Center.exe"
 [Run]
 Filename: "{app}\LeeT-License-Center.exe"; Description: "Open LEE T License Center"; Flags: postinstall nowait skipifsilent runascurrentuser
+[UninstallDelete]
+Type: files; Name: "{app}\license-center-install.log"
 [Code]
 var DeleteIssuerData, ConfigurationFailed: Boolean;
 function GetCustomSetupExitCode(): Integer;

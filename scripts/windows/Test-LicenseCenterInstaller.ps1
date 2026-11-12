@@ -44,6 +44,10 @@ function Uninstall-Issuer([bool]$DeleteData){
  $process=Start-Process (Join-Path $install 'unins000.exe') -ArgumentList $arguments -PassThru
  if(-not $process.WaitForExit(180000)){$process.Kill();throw 'Issuer uninstaller timed out.'}
  if($process.ExitCode -ne 0){throw 'Issuer uninstall failed.'}
+ for($attempt=0;$attempt -lt 100 -and (Test-Path -LiteralPath $install);$attempt++){Start-Sleep -Milliseconds 100}
+ if(Test-Path -LiteralPath $install){throw 'Uninstall retained program files.'}
+ $uninstallKey='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{438C12B7-0D5E-45D7-A4F0-CCB693E4CFE9}_is1'
+ if(Test-Path -LiteralPath $uninstallKey){throw 'Uninstall retained its Windows Apps registration.'}
 }
 try{
  Install-Issuer
