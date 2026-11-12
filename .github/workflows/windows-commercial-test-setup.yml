@@ -193,13 +193,13 @@ jobs:
           $keyId = $publisher.keyId
           & $compiler "/DPayloadDir=$payload" "/DBuildOutput=$output" "/DOfflineIssuerPublicKey=$key" "/DOfflineIssuerKeyId=$keyId" 'installer/windows/LeeT-Commercial-Setup.iss'
           if ($LASTEXITCODE -ne 0) { throw 'Commercial release candidate compilation failed.' }
-          $setup = Join-Path $output 'LEE-T-Commercial-0.8.5-RC1-Setup.exe'
+          $setup = Join-Path $output 'LEE-T-Commercial-0.8.5-RC2-Setup.exe'
           if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw 'Commercial release candidate was not produced.' }
           $hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText((Join-Path $output 'SHA256SUMS.txt'), ($hash + '  ' + (Split-Path $setup -Leaf) + "`n"), [Text.UTF8Encoding]::new($false))
-          Copy-Item 'docs/commercial/RC1-INSTALL.md' (Join-Path $output 'INSTALL.md')
+          Copy-Item 'docs/commercial/RC2-INSTALL.md' (Join-Path $output 'INSTALL.md')
       - uses: actions/upload-artifact@v4
         with:
-          name: LEE-T-Commercial-0.8.5-RC1-Windows
+          name: LEE-T-Commercial-0.8.5-RC2-Windows
           path: ${{ runner.temp }}/leet-commercial-rc/*
           if-no-files-found: error

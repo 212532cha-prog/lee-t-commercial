@@ -20,7 +20,7 @@ AppId=LeeTCommercialWarehouse
 SetupMutex=LeeTCommercialWarehouseSetup
 AppName=LEE T Commercial
 AppVersion=0.8.5
-AppVerName=LEE T Commercial 0.8.5 RC1
+AppVerName=LEE T Commercial 0.8.5 RC2
 VersionInfoDescription=LEE T Commercial release candidate
 Uninstallable=yes
 UninstallDisplayName=LEE T Commercial
@@ -39,7 +39,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#BuildOutput}
 #ifdef CommercialRelease
-OutputBaseFilename=LEE-T-Commercial-0.8.5-RC1-Setup
+OutputBaseFilename=LEE-T-Commercial-0.8.5-RC2-Setup
 #else
 #ifdef OfflineIssuerPublicKey
 OutputBaseFilename=LeeT-Offline-Setup
@@ -47,7 +47,7 @@ OutputBaseFilename=LeeT-Offline-Setup
 OutputBaseFilename=LeeT-Test-Setup
 #endif
 #endif
-Compression=lzma2
+Compression=lzma2/fast
 SolidCompression=yes
 
 [Files]
@@ -275,7 +275,7 @@ var
   Code: Integer;
 begin
   if CurUninstallStep <> usUninstall then Exit;
-  RemoveWarehouseData := MsgBox('Permanently delete this warehouse data, including products, stock, accounts and history? Choose No to keep data.',
+  RemoveWarehouseData := MsgBox('Permanently delete this warehouse data, activation identity and desktop login caches? This includes products, stock, accounts and history. Choose No to keep data and activation.',
     mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
   if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
       RemovalArguments(False), '', SW_SHOWNORMAL, ewWaitUntilTerminated, Code) then
@@ -291,13 +291,18 @@ var
   DesktopResult: Integer;
 #ifdef CommercialRelease
   InstallRecord: TArrayOfString;
+  SavedIdentity: AnsiString;
 #endif
 begin
   if CurStep <> ssPostInstall then Exit;
 #ifdef CommercialRelease
+  if not LoadStringFromFile(AddBackslash(InstallLicenseDir) + 'installation-id', SavedIdentity) then
+    RaiseException('Could not record the verified installation identity.');
   SetArrayLength(InstallRecord, 1);
-  InstallRecord[0] := '{"Schema":1,"PayloadDirectory":"' + JsonPath(ExpandConstant('{app}')) +
-      '","DataRoot":"' + JsonPath(RemoveBackslashUnlessRoot(DataPage.Values[0])) + '"}';
+  InstallRecord[0] := '{"Schema":2,"PayloadDirectory":"' + JsonPath(ExpandConstant('{app}')) +
+      '","DataRoot":"' + JsonPath(RemoveBackslashUnlessRoot(DataPage.Values[0])) +
+      '","LicenseDirectory":"' + JsonPath(InstallLicenseDir) +
+      '","InstallationId":"' + JsonPath(Trim(String(SavedIdentity))) + '"}';
   if not SaveStringsToUTF8File(ExpandConstant('{app}\commercial-install.json'), InstallRecord, False) then
     RaiseException('Could not save the installation record.');
 #endif

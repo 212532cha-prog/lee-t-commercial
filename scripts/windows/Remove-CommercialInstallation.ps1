@@ -13,7 +13,7 @@ $record=Get-Content -LiteralPath (Join-Path $payload 'commercial-install.json') 
 $data=[IO.Path]::GetFullPath($record.DataRoot).TrimEnd('\')
 $prefix=$payload+'\'
 $dataPrefix=$data+'\'
-if($record.Schema -ne 1 -or $record.PayloadDirectory -cne $payload -or
+if($record.Schema -notin @(1,2) -or $record.PayloadDirectory -cne $payload -or
  $data -eq [IO.Path]::GetPathRoot($data).TrimEnd('\') -or
  $prefix.StartsWith($dataPrefix,[StringComparison]::OrdinalIgnoreCase) -or
  $dataPrefix.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase) -or
@@ -36,9 +36,41 @@ foreach($service in $services){
   throw ('Service belongs to another installation. Service '+$service.Name)
  }
 }
-if($RemoveData -and (Test-Path -LiteralPath $data)){
- if(@(Get-ChildItem -LiteralPath $data -Force -Recurse | Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint)}).Count){
-  throw 'Data contains linked entries. Review these entries before removing data.'
+$cleanup=@()
+if($RemoveData){
+ $cleanup+=@($data)
+ if($record.Schema -eq 2){
+  $license=[IO.Path]::GetFullPath($record.LicenseDirectory).TrimEnd('\')
+  if((Split-Path $license -Leaf) -ne 'Lee T Offline Activation' -or
+      $record.InstallationId -notmatch '^[a-fA-F0-9-]{36}$'){
+   throw 'The saved activation identity requires repair before full removal.'
+  }
+  if(Test-Path -LiteralPath $license){
+   $identity=([IO.File]::ReadAllText((Join-Path $license 'installation-id'))).Trim()
+   if($identity -cne $record.InstallationId){throw 'Activation belongs to another installation.'}
+   $allowed=@('installation-id','issuer-public.pem','license.json','setup.private.json')
+   if(@(Get-ChildItem -LiteralPath $license -Force | Where-Object {$_.PSIsContainer -or $_.Name -cnotin $allowed}).Count){
+    throw 'Activation contains unrecognized entries. Review these entries before removal.'
+   }
+   $cleanup+=@($license)
+  }
+  $profiles=@($env:LOCALAPPDATA)
+  $profiles+=@(Get-CimInstance Win32_UserProfile | Where-Object {-not $_.Special -and $_.LocalPath} | ForEach-Object {
+   Join-Path $_.LocalPath 'AppData\Local'
+  })
+  foreach($profile in @($profiles | Select-Object -Unique)){
+   $browser=Join-Path $profile 'LEE T\Warehouse Desktop'
+   if(Test-Path -LiteralPath $browser){$cleanup+=@($browser)}
+  }
+ }
+ foreach($directory in $cleanup){
+  for($parent=[IO.DirectoryInfo]::new($directory);$null -ne $parent;$parent=$parent.Parent){
+   if($parent.Exists -and ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Full removal cannot use linked directories.'}
+  }
+  if((Test-Path -LiteralPath $directory) -and
+    @(Get-ChildItem -LiteralPath $directory -Force -Recurse | Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint)}).Count){
+   throw 'Full removal contains linked entries. Review these entries before removal.'
+  }
  }
 }
 if($CheckOnly){Write-Output 'Installation ownership and runtime dependencies verified.';return}
@@ -54,11 +86,33 @@ foreach($name in $owned){
 }
 Get-CimInstance Win32_Process | Where-Object {
  $_.ExecutablePath -and $_.ExecutablePath.StartsWith((Join-Path $prefix 'desktop\'),[StringComparison]::OrdinalIgnoreCase)
-} | ForEach-Object {Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop}
-Get-NetFirewallRule -DisplayName 'LEE T Commercial Warehouse LAN*' -ErrorAction SilentlyContinue | ForEach-Object {
+} | ForEach-Object {
+ & taskkill.exe /PID $_.ProcessId /T /F | Out-Null
+ if($LASTEXITCODE -ne 0 -and (Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue)){throw 'Could not close the warehouse desktop process tree.'}
+}
+Get-NetFirewallRule -DisplayName '* LAN HTTPS','* LAN discovery' -ErrorAction SilentlyContinue | ForEach-Object {
  $rule=$_
  $filter=$rule | Get-NetFirewallApplicationFilter
  if($filter.Program -eq (Join-Path $payload 'runtime\node.exe')){$rule | Remove-NetFirewallRule}
 }
-if($RemoveData -and (Test-Path -LiteralPath $data)){Remove-Item -LiteralPath $data -Recurse -Force -ErrorAction Stop}
+if($RemoveData){
+ $tls=Join-Path $data 'data\tls'
+ $caPath=Join-Path $tls 'warehouse-root-ca.cer'
+ $leafPath=Join-Path $tls 'warehouse-server.cer'
+ if((Test-Path -LiteralPath $caPath) -and (Test-Path -LiteralPath $leafPath)){
+  $ca=[Security.Cryptography.X509Certificates.X509Certificate2]::new($caPath)
+  $leaf=[Security.Cryptography.X509Certificates.X509Certificate2]::new($leafPath)
+  try{
+   if($ca.Subject -notlike 'CN=LEE T Warehouse CA *' -or $ca.Subject -cne $ca.Issuer -or $leaf.Issuer -cne $ca.Subject){
+    throw 'The warehouse certificates require review before full removal.'
+   }
+   foreach($path in @(('Cert:\LocalMachine\Root\'+$ca.Thumbprint),('Cert:\LocalMachine\My\'+$ca.Thumbprint),('Cert:\LocalMachine\My\'+$leaf.Thumbprint))){
+    if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Force -ErrorAction Stop}
+   }
+  }finally{$ca.Dispose();$leaf.Dispose()}
+ }
+}
+foreach($directory in $cleanup){
+ if(Test-Path -LiteralPath $directory){Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction Stop}
+}
 Write-Output 'Warehouse services removed. Program removal can continue.'
