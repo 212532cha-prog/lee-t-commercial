@@ -32,7 +32,11 @@ Name: "{autodesktop}\LEE T License Center"; Filename: "{app}\LeeT-License-Center
 [Run]
 Filename: "{app}\LeeT-License-Center.exe"; Description: "Open LEE T License Center"; Flags: postinstall nowait skipifsilent runascurrentuser
 [Code]
-var DeleteIssuerData: Boolean;
+var DeleteIssuerData, ConfigurationFailed: Boolean;
+function GetCustomSetupExitCode(): Integer;
+begin
+  if ConfigurationFailed then Result := 1 else Result := 0;
+end;
 function PowerShellPath(): String;
 begin
   Result := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
@@ -55,8 +59,10 @@ begin
     Parameters := '-NoProfile -STA -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\app\scripts\windows\Install-LicenseCenter.ps1') + '" -InstallDirectory "' + ExpandConstant('{app}') + '"';
     if ExpandConstant('{param:IssuerPasswordFile|}') <> '' then
       Parameters := Parameters + ' -PasswordFile "' + ExpandConstant('{param:IssuerPasswordFile|}') + '"';
-    if not Exec(PowerShellPath(), Parameters, '', SW_HIDE, ewWaitUntilTerminated, ExitCode) or (ExitCode <> 0) then
-      RaiseException('License Center configuration failed. Existing issuer data was retained. Repair by running this installer again; see the issuer service log if present.');
+    if not Exec(PowerShellPath(), Parameters, '', SW_HIDE, ewWaitUntilTerminated, ExitCode) or (ExitCode <> 0) then begin
+      ConfigurationFailed := True;
+      RaiseException('License Center configuration failed. Existing issuer data was retained. Repair by running this installer again; see license-center-install.log in the installed program directory.');
+    end;
   end;
 end;
 function InitializeUninstall(): Boolean;

@@ -13,6 +13,8 @@ $node=Join-Path $install 'runtime\node.exe'
 $hostPath=Join-Path $install 'LeeTLicenseCenterService.exe'
 $databaseService='LeeTLicensePostgreSQL17'
 $backendService='LeeTLicenseCenter'
+$stage='runtime validation'
+try{
 foreach($file in @($node,$hostPath,(Join-Path $pg 'bin\pg_ctl.exe'))){
  if(-not (Test-Path -LiteralPath $file -PathType Leaf)){throw 'License Center installation is incomplete.'}
 }
@@ -27,6 +29,7 @@ if($service){
  if($service.PathName -ne $expected){throw 'Another installation owns the License Center service.'}
  Stop-Service $backendService
 }
+$stage='issuer provisioning or adoption'
 if(-not (Test-Path -LiteralPath $config)){
  $password=$null
  if($PasswordFile){
@@ -54,6 +57,7 @@ if(-not (Test-Path -LiteralPath $config)){
  $password=$null
 }else{
  # Preserve the complete ledger, signing key and operator identity on repair/upgrade.
+ $stage='existing issuer configuration'
  $settings=Get-Content -LiteralPath $config -Raw | ConvertFrom-Json
  $db=[uri]$settings.databaseUrl
  if($db.Host -ne '127.0.0.1' -or $db.Port -ne 55435 -or $db.AbsolutePath -ne '/leet_issuer'){
@@ -71,15 +75,19 @@ if(-not (Test-Path -LiteralPath $config)){
   if(-not (Test-Path -LiteralPath $ownership)){throw 'Missing issuer ownership record. Data was retained.'}
   $record=Get-Content -LiteralPath $ownership -Raw | ConvertFrom-Json
   if($record.installDirectory -ne $install -or $record.dataDirectory -ne $root){throw 'Issuer ownership mismatch. Data was retained.'}
+  $stage='restoring issuer database service'
   & (Join-Path $pg 'bin\pg_ctl.exe') register -N $databaseService -D $cluster -S demand -U 'NT AUTHORITY\NetworkService' -w | Out-Null
   if($LASTEXITCODE -ne 0){throw 'Could not restore the dedicated issuer database service.'}
  }
  # Change only this issuer service's executable; never alter the warehouse service.
+ $stage='binding issuer database runtime'
  $binary='"'+(Join-Path $pg 'bin\pg_ctl.exe')+'" runservice -N "'+$databaseService+'" -D "'+$cluster+'" -w'
  & sc.exe config $databaseService binPath= $binary start= auto | Out-Null
  if($LASTEXITCODE -ne 0){throw 'Could not bind the issuer database to its standalone runtime.'}
+ $stage='starting issuer database'
  Start-Service $databaseService
 }
+$stage='configuring issuer backend service'
 if(-not $service){
  New-Service -Name $backendService -DisplayName 'LEE T License Center' -BinaryPathName ('"'+$hostPath+'" "'+$root+'"') -StartupType Automatic -DependsOn $databaseService | Out-Null
 }
@@ -93,6 +101,7 @@ if($LASTEXITCODE -ne 0){throw 'Could not configure issuer service failure handli
 if($LASTEXITCODE -ne 0){throw 'Could not configure issuer database recovery.'}
 $marker=@{schema=1;installDirectory=$install;dataDirectory=$root;databaseService=$databaseService;backendService=$backendService}
 [IO.File]::WriteAllText((Join-Path $root 'installation.json'),($marker|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+$stage='starting issuer backend'
 Start-Service $backendService
 $ready=$false
 for($attempt=0;$attempt -lt 100;$attempt++){
@@ -101,3 +110,7 @@ for($attempt=0;$attempt -lt 100;$attempt++){
 }
 if(-not $ready){throw 'Issuer backend did not become ready. See C:\ProgramData\Lee T License Center\license-center-service.log.'}
 Write-Output 'LEE T License Center is ready. Database and offline signing service start automatically with Windows.'
+}catch{
+ [IO.File]::WriteAllText((Join-Path $install 'license-center-install.log'),('FAILED at '+$stage+': '+$_.Exception.Message),[Text.UTF8Encoding]::new($false))
+ throw
+}

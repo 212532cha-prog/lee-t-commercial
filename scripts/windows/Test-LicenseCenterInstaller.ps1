@@ -86,6 +86,8 @@ try{
  Write-Output 'PASS: standalone installer, TLS login, wrong-password rejection, paid signing, independent signature, cold service start, crash recovery, repair, preserved-data reinstall and full removal.'
 }catch{
  # These logs contain setup status and generic backend error stages, never private configuration.
+ $installLog=Join-Path $install 'license-center-install.log'
+ if(Test-Path -LiteralPath $installLog){Get-Content -LiteralPath $installLog | Write-Output}
  $serviceLog=Join-Path $root 'license-center-service.log'
  if(Test-Path -LiteralPath $serviceLog){Get-Content -LiteralPath $serviceLog -Tail 80 | Write-Output}
  Get-ChildItem -LiteralPath $fixture -Filter 'setup-*.log' | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object {Get-Content -LiteralPath $_.FullName -Tail 100 | Write-Output}
