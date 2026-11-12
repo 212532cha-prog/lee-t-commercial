@@ -176,7 +176,7 @@ jobs:
           name: LeeT-Offline-Setup
           path: ${{ runner.temp }}/leet-offline/LeeT-Offline-Setup.exe
           if-no-files-found: error
-      - name: Build the unified LEE T Commercial release candidate
+      - name: Build the branded LEE T Warehouse installer
         shell: powershell
         run: |
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
@@ -192,14 +192,14 @@ jobs:
           $key = Join-Path $issuer 'issuer-public.pem'
           $keyId = $publisher.keyId
           & $compiler "/DPayloadDir=$payload" "/DBuildOutput=$output" "/DOfflineIssuerPublicKey=$key" "/DOfflineIssuerKeyId=$keyId" 'installer/windows/LeeT-Commercial-Setup.iss'
-          if ($LASTEXITCODE -ne 0) { throw 'Commercial release candidate compilation failed.' }
-          $setup = Join-Path $output 'LEE-T-Commercial-0.8.5-RC3-Setup.exe'
-          if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw 'Commercial release candidate was not produced.' }
+          if ($LASTEXITCODE -ne 0) { throw 'LEE T Warehouse installer compilation failed.' }
+          $setup = Join-Path $output 'LEE-T-Warehouse-Setup.exe'
+          if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw 'LEE T Warehouse installer was not produced.' }
           $hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText((Join-Path $output 'SHA256SUMS.txt'), ($hash + '  ' + (Split-Path $setup -Leaf) + "`n"), [Text.UTF8Encoding]::new($false))
-          Copy-Item 'docs/commercial/RC3-INSTALL.md' (Join-Path $output 'INSTALL.md')
+          Copy-Item 'docs/commercial/INSTALL.md' (Join-Path $output 'INSTALL.md')
       - uses: actions/upload-artifact@v4
         with:
-          name: LEE-T-Commercial-0.8.5-RC3-Windows
+          name: LEE-T-Warehouse-0.8.5-Windows
           path: ${{ runner.temp }}/leet-commercial-rc/*
           if-no-files-found: error

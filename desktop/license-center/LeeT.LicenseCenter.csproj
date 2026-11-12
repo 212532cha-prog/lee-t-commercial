@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <Company>LEE T</Company>
+    <Product>LEE T License Center</Product>
+    <AssemblyTitle>LEE T License Center</AssemblyTitle>
+    <Description>LEE T License Center</Description>
     <ApplicationIcon>../../public/brand/lee-t.ico</ApplicationIcon>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>

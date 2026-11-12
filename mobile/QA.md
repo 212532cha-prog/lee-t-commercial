@@ -1,6 +1,6 @@
 # Android mobile acceptance
 
-Version: `0.8.5-mobile.4`, package `my.leet.warehouse`, minimum Android API 26.
+Version: `0.8.5` (version code `80505`), package `my.leet.warehouse`, minimum Android API 26.
 
 The Android workflow retains an APK only after the packaged WebView tests pass. It never uses `continue-on-error` for build, transport, or instrumentation checks. The complete repository CI separately runs on Node 22 and 24 with PostgreSQL 17.
 

@@ -27,6 +27,19 @@ public class WarehouseFlowTest {
     private WarehouseActivity activity;
     private WebView web;
 
+    @Test public void installedBrandAndIdentity() throws Exception {
+        android.content.Context context = instrumentation.getTargetContext();
+        android.content.pm.PackageManager manager = context.getPackageManager();
+        android.content.pm.PackageInfo info = manager.getPackageInfo(context.getPackageName(), 0);
+        assertEquals("my.leet.warehouse", info.packageName);
+        assertEquals("LEE T Warehouse", manager.getApplicationLabel(info.applicationInfo).toString());
+        assertEquals("0.8.5", info.versionName);
+        assertTrue("Must update the previous APK", info.getLongVersionCode() > 80504);
+        android.graphics.drawable.Drawable icon = manager.getApplicationIcon(context.getPackageName());
+        assertTrue("Launcher must use an adaptive LEE T icon", icon instanceof android.graphics.drawable.AdaptiveIconDrawable);
+        assertNotNull(((android.graphics.drawable.AdaptiveIconDrawable) icon).getForeground());
+    }
+
     private WebView findWeb(View view) {
         if (view instanceof WebView) return (WebView) view;
         if (view instanceof ViewGroup) for (int i=0; i<((ViewGroup)view).getChildCount(); i++) {

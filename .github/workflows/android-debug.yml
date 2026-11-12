@@ -1,4 +1,4 @@
-name: Lee T Android debug APK
+name: LEE T Warehouse Android acceptance
 
 on:
   push:
@@ -98,8 +98,10 @@ jobs:
           name: Lee-T-Mobile-Android-test-reports
           path: mobile/android/app/build/reports/androidTests/
           if-no-files-found: error
+      - name: Name the accepted test APK
+        run: cp mobile/android/app/build/outputs/apk/debug/app-debug.apk mobile/android/app/build/outputs/apk/debug/LEE-T-Warehouse-debug.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Lee-T-Mobile-debug-apk
-          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: LEE-T-Warehouse-0.8.5-debug-acceptance
+          path: mobile/android/app/build/outputs/apk/debug/LEE-T-Warehouse-debug.apk
           if-no-files-found: error

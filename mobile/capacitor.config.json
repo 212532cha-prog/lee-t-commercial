@@ -1,6 +1,6 @@
 {
   "appId": "my.leet.warehouse",
-  "appName": "LEE T Mobile",
+  "appName": "LEE T Warehouse",
   "webDir": "dist",
   "server": { "cleartext": false }
 }

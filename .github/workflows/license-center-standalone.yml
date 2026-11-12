@@ -2,6 +2,12 @@ name: Standalone License Center installer
 on:
   push:
     branches: [fix/standalone-license-center]
+  pull_request:
+    paths:
+      - 'desktop/license-center/**'
+      - 'installer/windows/LeeT-LicenseCenter-Setup.iss'
+      - 'public/brand/**'
+      - '.github/workflows/license-center-standalone.yml'
   workflow_dispatch:
 permissions:
   contents: read
