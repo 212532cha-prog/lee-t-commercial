@@ -65,7 +65,7 @@ public class WarehouseFlowTest {
         fail("Timed out: " + expression + "\n" + js("document.body.innerText"));
     }
     private void click(String selector) throws Exception {
-        waitFor("!!document.querySelector(" + JSONObject.quote(selector) + ")");
+        waitFor("!!document.querySelector(" + JSONObject.quote(selector) + ") && !document.querySelector(" + JSONObject.quote(selector) + ").disabled");
         js("document.querySelector(" + JSONObject.quote(selector) + ").click()");
     }
     private void input(String selector, String value) throws Exception {
@@ -111,12 +111,24 @@ public class WarehouseFlowTest {
             return output;
         } finally { instrumentation.removeMonitor(monitor); }
     }
+    private void tap(String selector) throws Exception {
+        js("document.querySelector(" + JSONObject.quote(selector) + ").scrollIntoView({block:'center'})");
+        JSONObject point = new JSONObject(js("(()=>{let r=document.querySelector(" + JSONObject.quote(selector) + ").getBoundingClientRect();return {x:(r.left+r.right)/2,y:(r.top+r.bottom)/2}})()"));
+        final float[] position = new float[3];
+        instrumentation.runOnMainSync(() -> { int[] location = new int[2]; web.getLocationOnScreen(location); position[0]=location[0];position[1]=location[1];position[2]=web.getScale(); });
+        float x=position[0]+(float)point.getDouble("x")*position[2], y=position[1]+(float)point.getDouble("y")*position[2];
+        long now=SystemClock.uptimeMillis();
+        android.view.MotionEvent down=android.view.MotionEvent.obtain(now,now,android.view.MotionEvent.ACTION_DOWN,x,y,0);
+        android.view.MotionEvent up=android.view.MotionEvent.obtain(now,now+50,android.view.MotionEvent.ACTION_UP,x,y,0);
+        try { instrumentation.sendPointerSync(down); instrumentation.sendPointerSync(up); }
+        finally { down.recycle();up.recycle(); }
+    }
     private void chooseFile(String selector, File file) throws Exception {
         Uri uri = androidx.core.content.FileProvider.getUriForFile(instrumentation.getTargetContext(), "my.leet.warehouse.fileprovider", file);
         Intent result = new Intent().setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(new IntentFilter(Intent.ACTION_OPEN_DOCUMENT),new Instrumentation.ActivityResult(Activity.RESULT_OK,result),true);
         try {
-            click(selector);
+            tap(selector);
             waitFor("document.querySelector(" + JSONObject.quote(selector) + ").files.length===1");
         } finally { instrumentation.removeMonitor(monitor); }
     }
@@ -217,7 +229,8 @@ public class WarehouseFlowTest {
             assertNotNull(storage().read().getJSONObject("inventory"));
             api("/api/test-control?token="+args.getString("control")+"&offline=0","GET",null);
             click("[data-action='reconnect']"); waitFor("document.querySelector('#connection-state').hidden");
-            click("[data-action='sync-offline']"); waitFor("JSON.parse(LeeTWarehouse.offlineStatus()).state==='saved'");
+            js("window.qaSyncSaved=false;window.addEventListener('leet-offline-status',e=>{if(e.detail.state==='saved')window.qaSyncSaved=true})");
+            click("[data-action='sync-offline']"); waitFor("window.qaSyncSaved && JSON.parse(LeeTWarehouse.offlineStatus()).state==='saved'");
 
             // Reopening the administrator entry restores the encrypted session, not just a WebView cookie.
             open(true); waitFor("document.querySelector('.workspace h1')?.innerText==='Phone Administrator'");

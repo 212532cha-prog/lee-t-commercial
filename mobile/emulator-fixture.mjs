@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID, X509Certificate } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
@@ -56,6 +57,8 @@ export async function createEmulatorFixture() {
     const context = { raw: administrator.token, csrf: administrator.csrf };
     const category = await catalog.addMaster('categories', { name: 'Phone tests' }, context);
     const product = await catalog.create({ name: 'Phone bolt', categoryId: category.id, locationId: UNASSIGNED, individualCost: '1.25', minimumStock: 5, supplierIds: [] }, context);
+    const detail = await catalog.detail(product.id);
+    assert.match(detail.qrToken, /^whp1_[A-Za-z0-9_-]{32}$/);
     const photos = new PhotoStore(pool, join(data, 'product-photos'), auth);
     const stock = new StockService(pool, auth), count = new CountService(pool, auth);
     backup = new BackupService(pool, auth, data);
@@ -83,7 +86,7 @@ export async function createEmulatorFixture() {
     });
     await new Promise(resolve => server.listen(13443, '0.0.0.0', resolve));
     console.log('Android fixture database: ' + engine);
-    return { close, arguments: { origin, pin, password, control, product: product.id, token: product.qrToken,
+    return { close, arguments: { origin, pin, password, control, product: product.id, token: detail.qrToken,
       employee: employee.id, serverId: pairing.serverId } };
   } catch (error) { await close(); throw error; }
 }
