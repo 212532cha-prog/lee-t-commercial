@@ -97,6 +97,34 @@ public class WarehouseFlowTest {
     private AdministratorStorage storage() throws Exception {
         return new AdministratorStorage(instrumentation.getTargetContext(), args.getString("origin"), args.getString("pin"));
     }
+    @Test public void secureStorageRejectsExpiryCorruptionAndMismatchedSessions() throws Exception {
+        AdministratorStorage saved = storage();
+        saved.clear();
+        for (String invalid : new String[]{"http://warehouse.example:13443", args.getString("origin") + "/", args.getString("origin") + "?x=1", "https://user@warehouse.example:13443"}) {
+            try { new AdministratorStorage(instrumentation.getTargetContext(), invalid, args.getString("pin")); fail("Invalid storage identity accepted"); }
+            catch (IllegalArgumentException expected) {}
+        }
+        String token = "a".repeat(43);
+        JSONObject record = AdministratorStorage.newSession(token);
+        saved.save(record);
+        saved.saveInventory(token, new JSONObject().put("synchronizedAt", "2026-11-12T07:00:00Z").put("products", new org.json.JSONArray()));
+        assertNotNull(saved.read().getJSONObject("inventory"));
+        try { saved.saveInventory("b".repeat(43), new JSONObject()); fail("Wrong session wrote offline inventory"); }
+        catch (IllegalStateException expected) {}
+        record.put("createdAt", System.currentTimeMillis() - 8L * 24 * 60 * 60 * 1000);
+        saved.save(record); assertNull(saved.read());
+        try { saved.saveInventory(token, new JSONObject()); fail("Expired session reported sync success"); }
+        catch (IllegalStateException expected) {}
+        record = AdministratorStorage.newSession(token); saved.save(record);
+        java.lang.reflect.Field field = AdministratorStorage.class.getDeclaredField("file"); field.setAccessible(true);
+        File file = ((android.util.AtomicFile) field.get(saved)).getBaseFile();
+        byte[] encrypted = Files.readAllBytes(file.toPath());
+        assertFalse(new String(encrypted, java.nio.charset.StandardCharsets.UTF_8).contains(token));
+        encrypted[encrypted.length - 1] ^= 1; Files.write(file.toPath(), encrypted);
+        assertNull("Tampered ciphertext must never be accepted", saved.read());
+        saved.clear();
+    }
+
     @Test public void packagedAdministratorEmployeeAndBusinessFlows() throws Exception {
         try {
             storage().clear();
@@ -115,7 +143,7 @@ public class WarehouseFlowTest {
             waitFor("!!document.querySelector('[data-catalog=edit]') && document.querySelector('.main-panel').innerText.includes('Phone bolt updated')");
             assertEquals("PATCH product edit",200,api("/api/products/"+args.getString("product"),"GET",null).getInt("status"));
             // Actual native binary upload and protected image reads, not a fetch mock.
-            js("window.qaUpload=null;import('/native-transport.js').then(async m=>{let s=await(await m.warehouseFetch('/api/me')).json();let p=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='),c=>c.charCodeAt(0));let r=await m.warehouseFetch('/api/products/"+args.getString("product")+"/photo',{method:'PUT',headers:{'Content-Type':'image/png','X-CSRF-Token':s.csrf},body:new Blob([p],{type:'image/png'})});window.qaUpload=r.status}).catch(e=>window.qaUpload=String(e))");
+            js("window.qaUpload=null;import('/native-transport.js').then(async m=>{let s=await(await m.warehouseFetch('/api/me')).json();let p=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWNQWdiFFTEMLQkAoChTwXaTP6IAAAAASUVORK5CYII='),c=>c.charCodeAt(0));let r=await m.warehouseFetch('/api/products/"+args.getString("product")+"/photo',{method:'PUT',headers:{'Content-Type':'image/png','X-CSRF-Token':s.csrf},body:new Blob([p],{type:'image/png'})});window.qaUpload=r.status}).catch(e=>window.qaUpload=String(e))");
             waitFor("window.qaUpload!==null"); assertEquals("200",js("window.qaUpload"));
             nav("products"); click("[data-catalog='detail']");
             waitFor("document.querySelector('.product-image')?.naturalWidth>0 && document.querySelector('.qr-image')?.naturalWidth>0");

@@ -25,7 +25,7 @@ if (!manifest.includes(networkConfig)) {
 let workspaceManifest = readFileSync(manifestPath, 'utf8');
 if (!workspaceManifest.includes('android:name=".WarehouseActivity"')) {
   workspaceManifest = workspaceManifest.replace('</application>',
-    '<activity android:name=".WarehouseActivity" android:exported="false" />\n    </application>');
+    '<activity android:name=".WarehouseActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />\n    </application>');
 }
 if (!workspaceManifest.includes('android:name="android.permission.CAMERA"')) {
   workspaceManifest = workspaceManifest.replace('</manifest>',
@@ -65,3 +65,13 @@ writeFileSync(appGradle, gradle);
 const androidTests = 'android/app/src/androidTest/java/my/leet/warehouse';
 mkdirSync(androidTests, { recursive: true });
 copyFileSync('android-tests/WarehouseFlowTest.java', androidTests + '/WarehouseFlowTest.java');
+
+// Keep the generated package-identity smoke test, fixing its template placeholder.
+const identityTest = 'android/app/src/androidTest/java/com/getcapacitor/myapp/ExampleInstrumentedTest.java';
+if (existsSync(identityTest)) {
+  const identitySource = readFileSync(identityTest, 'utf8');
+  writeFileSync(identityTest, identitySource.replace('assertEquals("com.getcapacitor.app", appContext.getPackageName())',
+    'assertEquals("my.leet.warehouse", appContext.getPackageName())'));
+}
+mkdirSync(workspaceAssets + '/brand', { recursive: true });
+copyFileSync('../public/brand/lee-t-logo.jpg', workspaceAssets + '/brand/lee-t-logo.jpg');

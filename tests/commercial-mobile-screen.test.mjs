@@ -125,4 +125,17 @@ test('mobile pairing screen guides camera recovery, discovery, and reopening at 
   assert.equal(await page.locator('#offline-panel').isVisible(), false);
   await page.getByRole('button', { name: '查看离线库存' }).click();
   await page.getByText(/没有可用的离线库存/).waitFor();
+  await page.evaluate(() => localStorage.removeItem('leet-verified-warehouse'));
+  await page.reload();
+  await page.getByRole('heading', {name:'选择登录身份'}).waitFor();
+  assert.equal(await page.getByRole('button', {name:'员工登录',exact:true}).isVisible(), false);
+  assert.equal(await administrator.isVisible(), true, 'Administrator-only pairing remains a first-class entrance');
+  await administrator.click();
+  await page.waitForFunction(() => globalThis.fixture.opens.length === 1);
+  assert.equal(await page.evaluate(() => globalThis.fixture.scans), 0);
+  for (const locale of ['en','zh','ms']) {
+    await page.getByRole('combobox').selectOption(locale);
+    assert.equal(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth), true);
+    assert.equal(await page.locator('#administrator').evaluate(button => button.getBoundingClientRect().height >= 44), true);
+  }
 });

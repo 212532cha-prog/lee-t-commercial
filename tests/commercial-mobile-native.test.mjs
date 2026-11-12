@@ -66,3 +66,14 @@ test('download cancellation and native failures stay distinguishable from a save
   fail = true;
   await assert.rejects(m.warehouseDownload('/api/backups/download-full'), /connection failed/);
 });
+
+
+test('spreadsheet preview proof is forwarded with the exact workbook upload', async t => {
+  t.after(() => { delete globalThis.LeeTWarehouse; delete globalThis.leetNativeReceive; });
+  let start;
+  const m = await load({ beginUploadWithHeaders(...args) { start = args; return 'sheet'; }, appendUpload() {}, finishUpload(id) { respond(id); }, cancelUpload() {} });
+  await m.warehouseFetch('/api/products/import-commit?categoryId=fixture', { method: 'POST', body: new Blob(['workbook']), headers: {
+    'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'X-CSRF-Token': 'csrf', 'X-Import-Preview': 'validated-preview',
+  } });
+  assert.deepEqual(start, ['/api/products/import-commit?categoryId=fixture', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 8, 'csrf', '{"X-Import-Preview":"validated-preview"}']);
+});

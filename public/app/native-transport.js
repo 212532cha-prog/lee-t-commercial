@@ -35,7 +35,8 @@ function nativeCall(send, signal) {
 export async function warehouseUpload(path, file, { headers = {}, signal, progress = () => {} } = {}) {
   if (!bridge) throw Error('Native upload unavailable');
   const type = headers['Content-Type'] || 'application/octet-stream';
-  const upload = bridge.beginUpload(path, type, file.size, headers['X-CSRF-Token'] ?? null);
+  const extra = headers['X-Import-Preview'] ? { 'X-Import-Preview': headers['X-Import-Preview'] } : {};
+  const upload = bridge.beginUploadWithHeaders ? bridge.beginUploadWithHeaders(path, type, file.size, headers['X-CSRF-Token'] ?? null, JSON.stringify(extra)) : bridge.beginUpload(path, type, file.size, headers['X-CSRF-Token'] ?? null);
   try {
     for (let offset = 0; offset < file.size; offset += 256 * 1024) {
       if (signal?.aborted) throw signal.reason;

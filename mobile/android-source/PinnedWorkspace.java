@@ -183,14 +183,22 @@ public final class PinnedWorkspace {
 
     @JavascriptInterface
     public String beginUpload(String path, String type, long length, String csrf) throws Exception {
+        return beginUploadWithHeaders(path, type, length, csrf, "{}");
+    }
+
+    @JavascriptInterface
+    public String beginUploadWithHeaders(String path, String type, long length, String csrf, String extra) throws Exception {
+        Map<String, String> requestHeaders = headers(extra);
         if (closed || !uploads.isEmpty() || length < 0) throw new IllegalStateException("Upload busy");
         boolean photo = path != null && (path.matches("/api/products/[a-fA-F0-9-]{36}/photo") || path.equals("/api/me/avatar"));
         if (!(photo && ("image/jpeg".equals(type) || "image/png".equals(type)) && length <= 5 * 1024 * 1024) &&
-            !("/api/backups/upload".equals(path) && "application/octet-stream".equals(type))) throw new IllegalArgumentException("Invalid upload");
+            !("/api/backups/upload".equals(path) && "application/octet-stream".equals(type)) &&
+            !(path != null && path.matches("/api/products/import-(?:preview|commit)\\?categoryId=[a-fA-F0-9-]{36}") &&
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".equals(type) && length <= 1024 * 1024)) throw new IllegalArgumentException("Invalid upload");
         File file = File.createTempFile("leet-upload-", ".tmp", view.getContext().getCacheDir());
         if (length > file.getUsableSpace()) { file.delete(); throw new IOException("Insufficient phone storage"); }
         String id = java.util.UUID.randomUUID().toString();
-        uploads.put(id, new Upload(file, path, type, length, csrf));
+        uploads.put(id, new Upload(file, path, type, length, csrf, requestHeaders));
         return id;
     }
 
@@ -209,7 +217,7 @@ public final class PinnedWorkspace {
     public void cancelUpload(String id) {
         Upload upload = uploads.get(id);
         if (upload != null) synchronized (upload) {
-            if (!upload.sending) { uploads.remove(id); upload.file.delete(); }
+            if (closed || !upload.sending) { uploads.remove(id); upload.file.delete(); }
         }
     }
 
@@ -223,7 +231,7 @@ public final class PinnedWorkspace {
         }
         requests.execute(() -> {
             try {
-                var response = transport.upload(upload.path, upload.type, upload.file, upload.csrf);
+                var response = transport.upload(upload.path, upload.type, upload.file, upload.csrf, upload.headers);
                 deliver(requestId, "response", response.status, response.body);
                 nextInventorySync = 0;
             } catch (Exception failure) { deliver(requestId, "error", 0, ""); }
@@ -235,9 +243,10 @@ public final class PinnedWorkspace {
         final File file;
         final String path, type, csrf;
         final long length;
+        final Map<String, String> headers;
         boolean sending;
-        Upload(File file, String path, String type, long length, String csrf) {
-            this.file = file; this.path = path; this.type = type; this.length = length; this.csrf = csrf;
+        Upload(File file, String path, String type, long length, String csrf, Map<String, String> headers) {
+            this.file = file; this.path = path; this.type = type; this.length = length; this.csrf = csrf; this.headers = headers;
         }
     }
 
@@ -299,8 +308,8 @@ public final class PinnedWorkspace {
                 if (photo != null && photo.length > 0) return new WebResourceResponse(photo[0] == (byte) 0x89 ? "image/png" : "image/jpeg", null, new ByteArrayInputStream(photo));
             } else {
                 String name = "/".equals(path) ? "index.html" : path.substring(1);
-                if (name.matches("(?:[a-z-]+\\.js|index\\.html|app\\.css|vendor/jsqr\\.js|fonts/business-regular\\.woff2)")) {
-                    String mime = name.endsWith(".js") ? "text/javascript" : name.endsWith(".css") ? "text/css" : name.endsWith(".woff2") ? "font/woff2" : "text/html";
+                if (name.matches("(?:[a-z-]+\\.js|index\\.html|app\\.css|vendor/jsqr\\.js|fonts/business-regular\\.woff2|brand/lee-t-logo\\.jpg)")) {
+                    String mime = name.endsWith(".js") ? "text/javascript" : name.endsWith(".css") ? "text/css" : name.endsWith(".woff2") ? "font/woff2" : name.endsWith(".jpg") ? "image/jpeg" : "text/html";
                     return new WebResourceResponse(mime, "UTF-8", 200, "OK", Collections.singletonMap(
                         "Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; " +
                         "connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"),

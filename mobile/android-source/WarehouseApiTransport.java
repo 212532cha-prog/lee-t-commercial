@@ -174,9 +174,15 @@ final class WarehouseApiTransport {
     }
 
     WarehouseIdentityProbe.Response upload(String path, String type, java.io.File file, String csrf) throws Exception {
+        return upload(path, type, file, csrf, java.util.Collections.emptyMap());
+    }
+
+    WarehouseIdentityProbe.Response upload(String path, String type, java.io.File file, String csrf, Map<String, String> headers) throws Exception {
         boolean photo = path.matches("/api/products/[a-fA-F0-9-]{36}/photo") || path.equals("/api/me/avatar");
         if (!(photo && (type.equals("image/jpeg") || type.equals("image/png")) && file.length() <= 5 * 1024 * 1024) &&
-            !(path.equals("/api/backups/upload") && type.equals("application/octet-stream"))) {
+            !(path.equals("/api/backups/upload") && type.equals("application/octet-stream")) &&
+            !(path.matches("/api/products/import-(?:preview|commit)\\?categoryId=[a-fA-F0-9-]{36}") &&
+                type.equals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") && file.length() <= 1024 * 1024)) {
             throw new IllegalArgumentException("Invalid mobile upload");
         }
         URI url = endpoint(path);
@@ -186,6 +192,10 @@ final class WarehouseApiTransport {
             connection.setRequestProperty("Content-Type", type);
             if (csrf != null) connection.setRequestProperty("X-CSRF-Token", csrf);
             connection.setDoOutput(true);
+            for (var header : headers.entrySet()) {
+                if (!header.getKey().equals("X-Import-Preview")) throw new IllegalArgumentException("Invalid upload header");
+                connection.setRequestProperty(header.getKey(), header.getValue());
+            }
             connection.setFixedLengthStreamingMode(file.length());
             try (InputStream input = new java.io.FileInputStream(file); OutputStream output = connection.getOutputStream()) {
                 byte[] buffer = new byte[64 * 1024];

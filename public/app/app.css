@@ -24,3 +24,5 @@ main#app{max-width:1440px;padding:24px}.app-layout{display:grid;grid-template-co
  .sidebar{bottom:calc(110px + env(safe-area-inset-bottom));max-height:calc(100dvh - 200px)}
  .main-panel{min-height:45vh}.workspace h1{overflow-wrap:anywhere}.stat-grid{gap:8px}
 }
+
+.app-brand{display:flex;align-items:center;gap:10px}.app-brand img{border-radius:8px;object-fit:cover}

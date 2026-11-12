@@ -214,7 +214,19 @@ public class WarehouseActivity extends Activity {
                 if (request == pendingCamera) pendingCamera = null;
             }
         });
-        setContentView(workspace);
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
+        frame.addView(workspace, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        frame.setOnApplyWindowInsetsListener((view, insets) -> {
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() |
+                    android.view.WindowInsets.Type.displayCutout() | android.view.WindowInsets.Type.ime());
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            } else { view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom()); }
+            return insets;
+        });
+        setContentView(frame);
+        frame.requestApplyInsets();
         workspace.loadUrl(url);
     }
 
