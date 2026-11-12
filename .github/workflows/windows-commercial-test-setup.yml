@@ -198,6 +198,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'LEE T Warehouse installer compilation failed.' }
           $setup = Join-Path $output 'LEE-T-Warehouse-Setup.exe'
           if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw 'LEE T Warehouse installer was not produced.' }
+          ./scripts/windows/Test-PackageBranding.ps1 -SetupExecutable $setup -ProductName 'LEE T Warehouse' -ExpectedVersion '0.8.5.0'
           $hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText((Join-Path $output 'SHA256SUMS.txt'), ($hash + '  ' + (Split-Path $setup -Leaf) + "`n"), [Text.UTF8Encoding]::new($false))
           Copy-Item 'docs/commercial/INSTALL.md' (Join-Path $output 'INSTALL.md')
