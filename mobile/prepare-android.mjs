@@ -33,21 +33,24 @@ if (!workspaceManifest.includes('android:name="android.permission.CAMERA"')) {
   workspaceManifest = workspaceManifest.replace('</manifest>',
     '    <uses-permission android:name="android.permission.CAMERA" />\n</manifest>');
 }
-workspaceManifest = workspaceManifest.replace(/android:(icon|roundIcon)="@mipmap\/ic_launcher(?:_round)?"/g,
-  (_entry, name) => 'android:' + name + '="@drawable/leet_launcher"');
-if (!workspaceManifest.includes('android:icon="@drawable/leet_launcher"')) throw Error('Cannot configure the LEE T launcher icon.');
+workspaceManifest = workspaceManifest.replace(/android:(icon|roundIcon)="@(?:mipmap\/ic_launcher(?:_round)?|drawable\/leet_launcher|mipmap\/leet_launcher)"/g,
+  (_entry, name) => 'android:' + name + '="@mipmap/leet_launcher"');
+if (!workspaceManifest.includes('android:icon="@mipmap/leet_launcher"')) throw Error('Cannot configure the LEE T launcher icon.');
 writeFileSync(manifestPath, workspaceManifest);
 // Keep the artwork inside Android's adaptive-icon safe area so launcher masks do not crop it.
 mkdirSync(main + '/res/drawable-nodpi', { recursive: true });
-rmSync(main + '/res/drawable-nodpi/leet_launcher.jpg', { force: true });
+for (const path of ['drawable-nodpi/leet_launcher.jpg', 'drawable-nodpi/leet_launcher.png', 'drawable-v26/leet_launcher.xml']) {
+  rmSync(main + '/res/' + path, { force: true });
+}
 const logo = await brandArtwork('../public/brand/lee-t-logo.jpg');
 await sharp(logo).resize(176, 176, { fit: 'contain', background: '#ffffff' })
   .extend({ top: 56, bottom: 56, left: 56, right: 56, background: '#ffffff' })
   .png().toFile(main + '/res/drawable-nodpi/leet_foreground.png');
+mkdirSync(main + '/res/mipmap-nodpi', { recursive: true });
 await sharp(logo).resize(192, 192, { fit: 'contain', background: '#ffffff' })
-  .png().toFile(main + '/res/drawable-nodpi/leet_launcher.png');
-mkdirSync(main + '/res/drawable-v26', { recursive: true });
-writeFileSync(main + '/res/drawable-v26/leet_launcher.xml', `<?xml version="1.0" encoding="utf-8"?>
+  .png().toFile(main + '/res/mipmap-nodpi/leet_launcher.png');
+mkdirSync(main + '/res/mipmap-anydpi-v26', { recursive: true });
+writeFileSync(main + '/res/mipmap-anydpi-v26/leet_launcher.xml', `<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
   <background android:drawable="@android:color/white" />
   <foreground android:drawable="@drawable/leet_foreground" />
