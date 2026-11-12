@@ -15,6 +15,7 @@
 #endif
 
 [Setup]
+SetupIconFile=..\..\public\brand\lee-t.ico
 #ifdef CommercialRelease
 AppId=LeeTCommercialWarehouse
 SetupMutex=LeeTCommercialWarehouseSetup

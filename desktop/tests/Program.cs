@@ -15,6 +15,7 @@ internal static class Smoke
         {
             try
             {
+                Require(window.Icon is not null, "The warehouse window must use the LEE T application icon.");
                 await ActivationChecks.Run();
                 var grid = (Grid)window.Content;
                 var browser = grid.Children.OfType<WebView2>().Single();
