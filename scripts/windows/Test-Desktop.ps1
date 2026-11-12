@@ -167,6 +167,12 @@ try {
   for($x=0;$x -lt $actualBitmap.Width;$x++){
    for($y=0;$y -lt $actualBitmap.Height;$y++){
     if($actualBitmap.GetPixel($x,$y).ToArgb() -ne $expectedBitmap.GetPixel($x,$y).ToArgb()){
+     $diagnostics=Join-Path $env:RUNNER_TEMP 'leet-icon-diagnostics'
+     New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null
+     $actualBitmap.Save((Join-Path $diagnostics 'actual.png'))
+     $expectedBitmap.Save((Join-Path $diagnostics 'expected.png'))
+     Copy-Item -LiteralPath $activationExe -Destination (Join-Path $diagnostics 'LeeT.Warehouse.exe')
+     Write-Output ("First icon difference at ($x,$y): actual="+$actualBitmap.GetPixel($x,$y).ToArgb()+" expected="+$expectedBitmap.GetPixel($x,$y).ToArgb()+"; size="+$actualIcon.Size)
      throw 'Warehouse EXE shell icon does not match the LEE T brand.'
     }
    }
