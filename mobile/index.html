@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
   <meta name="theme-color" content="#10283b">
   <link rel="stylesheet" href="./pairing.css">
   <title>LEE T Mobile</title>
@@ -11,7 +11,7 @@
 <body>
   <main class="shell">
     <header class="header">
-      <div class="brand"><span class="mark" aria-hidden="true">LT</span><span>LEE T <small>WAREHOUSE</small></span></div>
+      <div class="brand"><img class="mark" src="./lee-t-logo.jpg" alt=""><span>LEE T <small>WAREHOUSE</small></span></div>
       <select id="language" aria-label="Language"><option value="en">English</option><option value="zh">中文</option><option value="ms">Melayu</option></select>
     </header>
     <section class="intro" aria-labelledby="title">
@@ -25,11 +25,26 @@
       <div class="actions" id="actions">
         <button id="resume" class="primary" type="button" hidden></button>
         <button id="scan" class="primary" type="button" disabled>Scan employee pairing code</button>
+        <button id="administrator" class="secondary" type="button" disabled>Administrator sign-in</button>
+        <button id="administrator-scan" class="secondary" type="button" hidden>Scan a new administrator code</button>
+        <button id="offline-inventory" class="secondary" type="button" hidden>View offline inventory</button>
+        <button id="clear-administrator" class="secondary" type="button" hidden>Forget saved administrator access</button>
       </div>
       <div class="feedback" id="feedback" hidden>
         <p id="status" role="status" aria-live="polite"></p>
         <button id="settings" class="secondary" type="button" hidden></button>
       </div>
+    </section>
+    <section class="card offline-inventory" id="offline-panel" aria-labelledby="offline-title" hidden>
+      <h2 id="offline-title"></h2>
+      <p id="offline-time"></p>
+      <p id="offline-read-only"></p>
+      <table>
+        <thead><tr><th id="offline-code" scope="col"></th><th id="offline-product" scope="col"></th><th id="offline-quantity" scope="col"></th></tr></thead>
+        <tbody id="offline-rows"></tbody>
+      </table>
+      <p id="offline-empty" hidden></p>
+      <button id="offline-close" class="secondary" type="button"></button>
     </section>
     <footer id="footer"></footer>
   </main>

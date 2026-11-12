@@ -33,6 +33,7 @@ export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=
     req.headers.host===localAuthority&&req.headers.origin==='https://'+localAuthority;
    if(write&&!origins.has(req.headers.origin)&&!localWrite)throw new AuthError('ORIGIN_REJECTED',403);
    if(ruoyiAdmin&&await ruoyiAdmin(req,res,url))return;
+   if(req.method==='GET'&&url==='/brand/lee-t-logo.jpg'){res.writeHead(200,{'Content-Type':'image/jpeg'});res.end(readFileSync(new URL('../../public/brand/lee-t-logo.jpg',import.meta.url)));return;}
    if(req.method==='GET'&&url==='/fonts/business-regular.woff2'){res.writeHead(200,{'Content-Type':'font/woff2','Cache-Control':'public, max-age=86400'});res.end(readFileSync(new URL('../../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2',import.meta.url)));return;}
    if(req.method==='GET'&&url==='/vendor/jsqr.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});res.end(readFileSync(new URL('../../node_modules/jsqr/dist/jsQR.js',import.meta.url)));return;}
    if(req.method==='GET'&&assets.has(url)){const [name,type]=assets.get(url);res.writeHead(200,{'Content-Type':type});res.end(readFileSync(new URL('../../public/app/'+name,import.meta.url)));return;}
@@ -49,7 +50,15 @@ export function createAuthServer({auth,publicOrigin,tunnelPublicOrigin,clock=()=
    if(auth.pairing&&raw&&url.startsWith('/api/')){
     await auth.pairing.checkSessionCookie(auth.pool,raw,cookieToken(req,'__Host-leet_device'));
    }
-   if(req.method==='GET'&&url==='/api/me'){const result=await auth.authorize(raw,{sessionOnly:true});json(res,200,{...result,...(auth.pairing?{employeePairing:true}:{})});return;}
+   if(req.method==='GET'&&url==='/api/me'){const result=await auth.authorize(raw,{sessionOnly:true});json(res,200,{...result,...(auth.pairing?{employeePairing:true}:{}),...(result.user.role==='admin'&&auth.pairing?.certificateFingerprint?{administratorMobilePairing:true}:{})});return;}
+   if(req.method==='GET'&&url==='/api/commercial/administrator-qr'&&auth.pairing?.certificateFingerprint){
+    await auth.authorize(raw,{admin:true});
+    const {origin,serverId,certificateFingerprint}=auth.pairing;
+    const link=new URL('/',origin);
+    link.hash='warehouse='+encodeURIComponent(JSON.stringify({schema:1,origin,serverId,certificateFingerprint}));
+    const qr=await QRCode.toBuffer(link.href,{width:320,errorCorrectionLevel:'M'});
+    res.writeHead(200,{'Content-Type':'image/png'});res.end(qr);return;
+   }
    if(req.method==='GET'&&url==='/api/state'){const a=await auth.authorize(raw,{sessionOnly:true});const flags=(await auth.pool.query('SELECT maintenance,admin_backup_required,clock_timestamp() AS server_time FROM system_settings WHERE id=1')).rows[0];const task=a.user.role==='employee'?(await auth.pool.query("SELECT id,run_generation FROM count_tasks WHERE assigned_user_id=$1 AND status='active'",[a.user.id])).rows[0]:null;json(res,200,{serverTime:flags.server_time,maintenance:flags.maintenance,adminBackupRequired:a.user.role==='admin'&&flags.admin_backup_required,task:task?{id:task.id,generation:String(task.run_generation)}:null});return;}
    if(req.method==='POST'&&url==='/api/auth/logout'){await auth.authorize(raw,{write:true,csrf,sessionOnly:true});await auth.logout(raw);res.setHeader('Set-Cookie',clearCookie());json(res,200,{ok:true});return;}
    if(req.method==='POST'&&url==='/api/me/password'){const a=await auth.authorize(raw,{admin:true,write:true,csrf});const input=await body(req);await auth.changeAdminPassword(a.user.id,input.oldPassword,input.newPassword,{raw,csrf});res.setHeader('Set-Cookie',clearCookie());json(res,200,{ok:true,requiresLogin:true});return;}

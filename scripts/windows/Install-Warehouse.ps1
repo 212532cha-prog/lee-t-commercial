@@ -79,8 +79,16 @@ if(-not $OfflineDependencies){
 foreach($backupPath in (@($BackupPath1,$BackupPath2) | Where-Object { $_ })){New-Item -ItemType Directory -Path $backupPath -Force | Out-Null;& icacls.exe $backupPath '/grant:r' '*S-1-5-19:(OI)(CI)M' | Out-Null;if($LASTEXITCODE -ne 0){throw 'Cannot grant backup directory access to LocalService.'}}
 if($GuiSetup){
  . (Join-Path $PSScriptRoot 'Setup-Dialogs.ps1')
- $initial=Read-SetupAdministratorPassword
+ $administrator=Read-SetupAdministrator
+ $initial=$administrator.Password
+ $username=$administrator.Username
+ $displayName=$administrator.DisplayName
+ $administrator=$null
 }else{
+ $username=Read-Host 'Initial administrator username'
+ $displayName=Read-Host 'Initial administrator display name'
+ if([string]::IsNullOrWhiteSpace($username) -or $username.Trim().Length -gt 64 -or $username.Trim() -match '[\x00-\x1f\x7f]' -or
+    [string]::IsNullOrWhiteSpace($displayName) -or $displayName.Trim().Length -gt 128){throw 'Enter a valid administrator username and display name.'}
  $initial=Read-PlainSecret 'Initial Administrator password'
 }
 $database=$null
@@ -134,7 +142,17 @@ $executable=Join-Path $AppRoot 'WarehouseService.exe'
 $start=[Diagnostics.ProcessStartInfo]::new($node,'"'+(Join-Path $AppRoot 'scripts\initialize-server.mjs')+'" --require-local-listener')
 $start.WorkingDirectory=$AppRoot;$start.UseShellExecute=$false;$start.RedirectStandardInput=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true;$start.EnvironmentVariables['WAREHOUSE_CONFIG_PATH']=$configPath
 $process=[Diagnostics.Process]::new();$process.StartInfo=$start
-try{[void]$process.Start();$process.StandardInput.WriteLine((@{initialPassword=$initial;backupPath1=$BackupPath1;backupPath2=$BackupPath2}|ConvertTo-Json -Compress));$process.StandardInput.Close();$output=$process.StandardOutput.ReadToEnd();$errors=$process.StandardError.ReadToEnd();$process.WaitForExit();if($process.ExitCode -ne 0){throw 'Database initialization failed. Check the dedicated database role, PostgreSQL 17 and loopback-only listener. Protected configuration was preserved for diagnosis.'};Write-Output $output.Trim()}finally{$initial=$null;$databaseUrl=$null;$process.Dispose()}
+try{
+ [void]$process.Start()
+ $writer=[IO.StreamWriter]::new($process.StandardInput.BaseStream,[Text.UTF8Encoding]::new($false))
+ try{$writer.Write((@{initialUsername=$username;initialDisplayName=$displayName;initialPassword=$initial;backupPath1=$BackupPath1;backupPath2=$BackupPath2}|ConvertTo-Json -Compress))}
+ finally{$writer.Dispose()}
+ $output=$process.StandardOutput.ReadToEnd()
+ $errors=$process.StandardError.ReadToEnd()
+ $process.WaitForExit()
+ if($process.ExitCode -ne 0){throw 'Database initialization failed. Check the dedicated database role, PostgreSQL 17 and loopback-only listener. Protected configuration was preserved for diagnosis.'}
+ Write-Output $output.Trim()
+}finally{$initial=$null;$databaseUrl=$null;$process.Dispose()}
 Protect-Directory $AppRoot 'RX' -AllowDesktopRead
 $credential=[Management.Automation.PSCredential]::new('NT AUTHORITY\LocalService',[Security.SecureString]::new())
 New-Service -Name $serviceName -DisplayName $displayName -BinaryPathName ('"'+$executable+'" "'+$configPath+'"') -StartupType Automatic -DependsOn $PostgresService -Credential $credential | Out-Null

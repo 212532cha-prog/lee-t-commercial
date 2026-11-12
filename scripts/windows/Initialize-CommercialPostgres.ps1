@@ -3,10 +3,17 @@
 param(
  [Parameter(Mandatory=$true)][string]$PostgresDirectory,
  [Parameter(Mandatory=$true)][string]$ClusterRoot,
- [ValidatePattern('^LeeTPostgreSQL17(?:-[a-f0-9]{8})?$')][string]$ServiceName='LeeTPostgreSQL17',
- [ValidateRange(1024,65535)][int]$Port=55433
+ [ValidatePattern('^LeeT(?:License)?PostgreSQL17(?:-[a-f0-9]{8})?$')][string]$ServiceName,
+ [ValidateRange(1024,65535)][int]$Port,
+ [switch]$LicenseCenter
 )
 $ErrorActionPreference='Stop'
+$servicePrefix=if($LicenseCenter){'LeeTLicensePostgreSQL17'}else{'LeeTPostgreSQL17'}
+if(-not $ServiceName){$ServiceName=$servicePrefix}
+if($ServiceName -notmatch ('^'+$servicePrefix+'(?:-[a-f0-9]{8})?$')){throw 'The database service name does not match its purpose.'}
+if(-not $Port){$Port=if($LicenseCenter){55435}else{55433}}
+$appUser=if($LicenseCenter){'leet_license_app'}else{'leet_app'}
+$appDatabase=if($LicenseCenter){'leet_issuer'}else{'leet_warehouse'}
 if(-not [IO.Path]::IsPathRooted($ClusterRoot)){throw 'Use an absolute cluster directory.'}
 $root=[IO.Path]::GetFullPath($ClusterRoot)
 if(Test-Path -LiteralPath $root){throw 'Choose a new cluster directory. Existing database data will not be changed.'}
@@ -70,16 +77,19 @@ try{
  if($LASTEXITCODE -ne 0){throw 'Commercial PostgreSQL service registration failed.'}
  $registered=$true
  Start-Service -Name $ServiceName
- $sql="CREATE ROLE leet_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '$appSecret';`nCREATE DATABASE leet_warehouse OWNER leet_app;`nREVOKE CONNECT ON DATABASE leet_warehouse FROM PUBLIC;"
+ $sql="CREATE ROLE $appUser LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '$appSecret';`nCREATE DATABASE $appDatabase OWNER $appUser;`nREVOKE CONNECT ON DATABASE $appDatabase FROM PUBLIC;"
  Invoke-LocalSql postgres postgres $adminSecret $sql | Out-Null
- $listener=Invoke-LocalSql leet_app leet_warehouse $appSecret 'SHOW listen_addresses;'
+ $listener=Invoke-LocalSql $appUser $appDatabase $appSecret 'SHOW listen_addresses;'
  if($listener -ne '127.0.0.1'){throw 'Commercial PostgreSQL must listen only on loopback.'}
  # Disable the bootstrap login after setup. The application has its own database owner.
  Invoke-LocalSql postgres postgres $adminSecret 'ALTER ROLE postgres NOLOGIN;' | Out-Null
  Set-Service -Name $ServiceName -StartupType Automatic
+ $connection=[UriBuilder]::new('postgresql','127.0.0.1',$Port,$appDatabase)
+ $connection.UserName=$appUser
+ $connection.Password=$appSecret
  [pscustomobject]@{
   ServiceName=$ServiceName
-  DatabaseUrl=('postgresql://leet_app:'+ $appSecret +'@127.0.0.1:'+ $Port +'/leet_warehouse')
+  DatabaseUrl=$connection.Uri.AbsoluteUri
  }
 }catch{
  if($registered){

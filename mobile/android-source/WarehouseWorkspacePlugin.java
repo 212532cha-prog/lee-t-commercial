@@ -79,6 +79,34 @@ public class WarehouseWorkspacePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void offlineInventory(PluginCall call) {
+        try {
+            AdministratorStorage storage = new AdministratorStorage(getContext(), call.getString("origin"),
+                call.getString("certificateFingerprint"));
+            var record = storage.read();
+            var inventory = record == null ? null : record.optJSONObject("inventory");
+            if (inventory == null) {
+                call.resolve();
+            } else {
+                call.resolve(new JSObject(inventory.toString()));
+            }
+        } catch (Exception ignored) {
+            call.reject("Offline inventory unavailable");
+        }
+    }
+
+    @PluginMethod
+    public void clearAdministrator(PluginCall call) {
+        try {
+            new AdministratorStorage(getContext(), call.getString("origin"),
+                call.getString("certificateFingerprint")).clear();
+            call.resolve();
+        } catch (Exception ignored) {
+            call.reject("Could not clear saved administrator access");
+        }
+    }
+
+    @PluginMethod
     public void open(PluginCall call) {
         String url = call.getString("url");
         if (WarehouseIdentityProbe.httpsOrigin(url) == null) {
@@ -88,6 +116,7 @@ public class WarehouseWorkspacePlugin extends Plugin {
         try {
             getActivity().startActivity(new Intent(getActivity(), WarehouseActivity.class).putExtra("url", url)
                 .putExtra("certificateFingerprint", call.getString("certificateFingerprint"))
+                .putExtra("administrator", Boolean.TRUE.equals(call.getBoolean("administrator")))
                 .putExtra("route", call.getString("route")));
             call.resolve();
         } catch (RuntimeException error) {

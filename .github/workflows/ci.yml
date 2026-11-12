@@ -72,6 +72,9 @@ jobs:
             [void][Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors)
             if ($errors.Count) { throw ($errors | Out-String) }
           }
+      - name: Verify commercial uninstall ownership and data retention
+        shell: powershell
+        run: ./scripts/windows/Test-CommercialRemoval.ps1
       - name: Verify warehouse network selection
         shell: powershell
         run: ./scripts/windows/Test-WarehouseNetworkSelection.ps1
@@ -105,6 +108,22 @@ jobs:
       - name: Windows native PostgreSQL application start and restart
         shell: powershell
         run: ./scripts/windows/Test-NativeRuntime.ps1
+      - name: Set up .NET for the License Center desktop
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish the offline License Center EXE
+        run: dotnet publish desktop/license-center/LeeT.LicenseCenter.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist/license-center
+      - name: Verify separate Windows warehouse and issuer database provisioning
+        shell: powershell
+        run: |
+          ./scripts/windows/Test-CommercialPostgres.ps1
+          ./scripts/windows/Test-LocalLicenseCenter.ps1 -DesktopExecutable (Resolve-Path dist/license-center/LeeT-License-Center.exe).Path
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LeeT-License-Center-Windows-x64
+          path: dist/license-center/LeeT-License-Center.exe
+          if-no-files-found: error
 
   candidate-package:
     needs: [test, windows-service]

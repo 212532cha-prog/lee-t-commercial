@@ -15,18 +15,29 @@ test('mobile pairing screen guides camera recovery, discovery, and reopening at 
       token: 'a'.repeat(43), certificateFingerprint: 'ab'.repeat(32),
       expiresAt: new Date(Date.now() + 120000).toISOString(),
     }));
+    const administratorQr = origin + '/#warehouse=' + encodeURIComponent(JSON.stringify({
+      schema: 1, origin, serverId, certificateFingerprint: 'ab'.repeat(32),
+    }));
     window.fixture = { granted: false, scans: 0, settings: 0, opens: [] };
     mountPairingScreen({
       document, storage: localStorage, native: true,
       cameraAllowed: async () => fixture.granted,
       openSettings: async () => { fixture.settings++; },
-      scan: async () => { fixture.scans++; return { ScanResult: fixture.cancelled ? '' : qr }; },
+      scan: async (_words, administrator) => {
+        fixture.scans++;
+        return { ScanResult: fixture.cancelled ? '' : administrator ? administratorQr : qr };
+      },
       requestPinned: async ({ url, route }) => {
         if (!route) throw Error('Old IP');
         return { status: 200, url, data: { schema: 1, serverId } };
       },
       discover: () => new Promise(resolve => { fixture.resolveDiscovery = resolve; }),
       open: async options => fixture.opens.push(options),
+      offlineInventory: async () => fixture.cleared ? {} : {
+        synchronizedAt: '2026-11-09T01:00:00Z',
+        products: [{productCode: 'P001', name: '<img src=x>', quantity: '14'}],
+      },
+      clearAdministrator: async () => { fixture.cleared = true; },
     });
   `;
   const server = createServer(async (req, res) => {
@@ -75,4 +86,32 @@ test('mobile pairing screen guides camera recovery, discovery, and reopening at 
   await page.waitForFunction(() => globalThis.fixture.opens.length === 1);
   assert.equal(await page.evaluate(() => globalThis.fixture.scans), 0);
   assert.equal(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth), true);
+
+  await page.evaluate(() => { globalThis.fixture.granted = true; });
+  const administrator = page.getByRole('button', { name: '管理员登录', exact: true });
+  await administrator.click();
+  await page.getByText(/正在局域网寻找仓库/).waitFor();
+  await page.evaluate(() => globalThis.fixture.resolveDiscovery(['192.168.1.46']));
+  await page.getByRole('button', { name: '扫描新的管理员连接码' }).waitFor();
+  const routes = await page.evaluate(() => ({
+    employee: JSON.parse(localStorage.getItem('leet-verified-warehouse')).route,
+    administrator: JSON.parse(localStorage.getItem('leet-verified-administrator-warehouse')).route,
+  }));
+  assert.deepEqual(routes, { employee: '192.168.1.45', administrator: '192.168.1.46' });
+  await page.reload();
+  await administrator.click();
+  await page.waitForFunction(() => globalThis.fixture.opens.length === 1);
+  assert.deepEqual(await page.evaluate(() => [globalThis.fixture.scans, globalThis.fixture.opens[0].route]), [0, '192.168.1.46']);
+  assert.equal(await page.evaluate(() => globalThis.fixture.opens[0].administrator), true);
+  await page.getByRole('button', { name: '查看离线库存' }).click();
+  await page.getByText(/最后同步时间/).waitFor();
+  await page.getByRole('cell', { name: '<img src=x>' }).waitFor();
+  await page.getByRole('cell', { name: '14' }).waitFor();
+  assert.equal(await page.locator('#offline-rows img').count(), 0);
+  assert.equal(await page.evaluate(() => globalThis.fixture.opens.length), 1);
+  await page.getByRole('button', { name: '清除管理员登录记录' }).click();
+  await page.getByText('已清除管理员登录记录和离线库存。').waitFor();
+  assert.equal(await page.locator('#offline-panel').isVisible(), false);
+  await page.getByRole('button', { name: '查看离线库存' }).click();
+  await page.getByText(/没有可用的离线库存/).waitFor();
 });

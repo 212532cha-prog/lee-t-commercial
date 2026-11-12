@@ -9,14 +9,16 @@ mountPairingScreen({
   document: globalThis.document,
   storage: globalThis.localStorage,
   native: android,
-  scan: words => CapacitorBarcodeScanner.scanBarcode({
+  scan: (words, administrator) => CapacitorBarcodeScanner.scanBarcode({
     hint: CapacitorBarcodeScannerTypeHint.QR_CODE,
-    scanInstructions: words.steps[1],
+    scanInstructions: administrator ? words.administratorInstructions : words.steps[1],
   }),
   request: options => CapacitorHttp.get(options),
   requestPinned: options => workspace.verifyIdentity(options),
   discover: async options => (await workspace.discover(options)).addresses,
   open: options => workspace.open(options),
+  offlineInventory: options => workspace.offlineInventory(options),
+  clearAdministrator: options => workspace.clearAdministrator(options),
   cameraAllowed: async () => (await workspace.ensureCamera()).granted,
   openSettings: () => workspace.openSettings(),
 });

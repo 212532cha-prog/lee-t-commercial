@@ -1,6 +1,7 @@
 const $ = id => document.getElementById(id);
 const customers = $('customers');
 const payments = $('payments');
+const offlinePayments = $('offline-payments');
 
 async function api(path, input) {
   const response = await fetch(path, input ? {
@@ -14,6 +15,7 @@ async function api(path, input) {
 async function refreshCustomer() {
   const customerId = customers.value;
   payments.replaceChildren(new Option('Select a payment', ''));
+  offlinePayments.replaceChildren(new Option('Select a payment', ''));
   $('audit').replaceChildren();
   if (!customerId) return;
   const query = '?customerId=' + encodeURIComponent(customerId);
@@ -23,6 +25,9 @@ async function refreshCustomer() {
     const option = new Option(`${record.receipt_reference} · ${record.kind} · ${record.version} · ${record.status}`, record.id);
     option.disabled = !['confirmed', 'expired'].includes(record.status);
     payments.add(option);
+    const offlineOption = new Option(option.text, option.value);
+    offlineOption.disabled = !['confirmed', 'expired', 'redeemed'].includes(record.status);
+    offlinePayments.add(offlineOption);
   }
   for (const event of audit) {
     const item = document.createElement('li');
@@ -40,6 +45,15 @@ async function refreshCustomers(selected = customers.value) {
 }
 
 function showError(error) { $('status').textContent = error.message; }
+
+function downloadLicense(license) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(license, null, 2) + '\n'], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'LeeT-signed-license.json';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 customers.addEventListener('change', () => {
   $('code').textContent = '';
   refreshCustomer().catch(showError);
@@ -60,6 +74,13 @@ document.addEventListener('submit', async event => {
       input.customerId = customers.value;
       if (form.id === 'payment') {
         await api('/api/payments', input);
+      } else if (form.id === 'offline') {
+        const file = input.requestFile;
+        if (!file?.size || file.size > 4096) throw Error('Choose a device request JSON file of up to 4 KB.');
+        const request = JSON.parse(await file.text());
+        downloadLicense(await api('/api/sign-offline', {
+          customerId: input.customerId, paymentId: input.paymentId, priorLicenseId: input.priorLicenseId, request,
+        }));
       } else {
         input.expiresAt = new Date(input.expiresAt).toISOString();
         input.request = input.request.trim() ? JSON.parse(input.request) : undefined;

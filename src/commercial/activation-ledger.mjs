@@ -158,57 +158,59 @@ export function redeemInitialActivationCode(pool, input, issuer) {
   return redeemActivationCode(pool, input, issuer, { initialOnly: true });
 }
 
-export async function redeemActivationCode(pool, { code, request }, { privateKeyPem, keyId }, { initialOnly = false } = {}) {
+export async function redeemActivationCode(pool, { code, request }, issuer, options) {
   if (typeof code !== 'string' || !/^LT-[A-Za-z0-9_-]{32}$/.test(code)) throw invalidCode();
   try {
     validateDeviceRequest(request);
   } catch {
     throw invalidCode();
   }
-  const codeHash = activationCodeHash(code);
-  return transaction(pool, async client => {
-    const { rows: [record] } = await client.query(
-      'SELECT customer_id, version, license, expires_at > clock_timestamp() AS live FROM lee_t_activation_codes WHERE code_hash = $1 FOR UPDATE',
-      [codeHash],
+  return transaction(pool, client => redeemActivationCodeIn(client, activationCodeHash(code), request, issuer, options));
+}
+
+export async function redeemActivationCodeIn(client, codeHash, request, { privateKeyPem, keyId },
+  { initialOnly = false, allowExpiredSigned = false } = {}) {
+  const { rows: [record] } = await client.query(
+    'SELECT customer_id, version, license, expires_at > clock_timestamp() AS live FROM lee_t_activation_codes WHERE code_hash = $1 FOR UPDATE',
+    [codeHash],
+  );
+  if (!record || (!record.live && !(allowExpiredSigned && record.license))) throw invalidCode();
+  const { rows: [followup] } = await client.query(
+    'SELECT prior_code_hash, kind, target_request, replaced_at FROM lee_t_activation_followups WHERE code_hash = $1', [codeHash],
+  );
+  if ((initialOnly && followup) || followup?.replaced_at || await hasSuccessor(client, codeHash)) throw invalidCode();
+  if (record.license) {
+    const { installationId, deviceClaims } = record.license.payload;
+    const sameRequest = installationId === request.installationId &&
+      matchingClaims(deviceClaims, request) === 3;
+    if (!sameRequest) throw invalidCode();
+    return record.license;
+  }
+  let priorLicenseId = null;
+  if (followup) {
+    const { installationId, claims } = followup.target_request;
+    if (installationId !== request.installationId || matchingClaims(claims, request) !== 3) throw invalidCode();
+    const { rows: [prior] } = await client.query(
+      'SELECT license FROM lee_t_activation_codes WHERE code_hash = $1 FOR UPDATE', [followup.prior_code_hash],
     );
-    if (!record?.live) throw invalidCode();
-    const { rows: [followup] } = await client.query(
-      'SELECT prior_code_hash, kind, target_request, replaced_at FROM lee_t_activation_followups WHERE code_hash = $1', [codeHash],
+    if (!prior?.license || await hasSuccessor(client, followup.prior_code_hash)) throw invalidCode();
+    const { rows: [approval] } = await client.query(
+      `SELECT c.expires_at > clock_timestamp() AS live, f.replaced_at
+       FROM lee_t_activation_followups AS f
+       JOIN lee_t_activation_codes AS c ON c.code_hash = f.code_hash
+       WHERE f.code_hash = $1`, [codeHash],
     );
-    if ((initialOnly && followup) || followup?.replaced_at || await hasSuccessor(client, codeHash)) throw invalidCode();
-    if (record.license) {
-      const { installationId, deviceClaims } = record.license.payload;
-      const sameRequest = installationId === request.installationId &&
-        matchingClaims(deviceClaims, request) === 3;
-      if (!sameRequest) throw invalidCode();
-      return record.license;
-    }
-    let priorLicenseId = null;
-    if (followup) {
-      const { installationId, claims } = followup.target_request;
-      if (installationId !== request.installationId || matchingClaims(claims, request) !== 3) throw invalidCode();
-      const { rows: [prior] } = await client.query(
-        'SELECT license FROM lee_t_activation_codes WHERE code_hash = $1 FOR UPDATE', [followup.prior_code_hash],
-      );
-      if (!prior?.license || await hasSuccessor(client, followup.prior_code_hash)) throw invalidCode();
-      const { rows: [approval] } = await client.query(
-        `SELECT c.expires_at > clock_timestamp() AS live, f.replaced_at
-         FROM lee_t_activation_followups AS f
-         JOIN lee_t_activation_codes AS c ON c.code_hash = f.code_hash
-         WHERE f.code_hash = $1`, [codeHash],
-      );
-      if (!approval?.live || approval.replaced_at) throw invalidCode();
-      priorLicenseId = prior.license.payload.licenseId;
-      await client.query(
-        'INSERT INTO lee_t_activation_successions (prior_code_hash, successor_code_hash) VALUES ($1, $2)',
-        [followup.prior_code_hash, codeHash],
-      );
-    }
-    const license = issueLicense({
-      privateKeyPem, keyId, request, customerId: record.customer_id, version: record.version, kind: followup?.kind, priorLicenseId,
-    });
-    await client.query('UPDATE lee_t_activation_codes SET license = $2, redeemed_at = now() WHERE code_hash = $1', [codeHash, license]);
-    await client.query("INSERT INTO lee_t_activation_audit (code_hash, event) VALUES ($1, 'redeemed')", [codeHash]);
-    return license;
+    if (!approval?.live || approval.replaced_at) throw invalidCode();
+    priorLicenseId = prior.license.payload.licenseId;
+    await client.query(
+      'INSERT INTO lee_t_activation_successions (prior_code_hash, successor_code_hash) VALUES ($1, $2)',
+      [followup.prior_code_hash, codeHash],
+    );
+  }
+  const license = issueLicense({
+    privateKeyPem, keyId, request, customerId: record.customer_id, version: record.version, kind: followup?.kind, priorLicenseId,
   });
+  await client.query('UPDATE lee_t_activation_codes SET license = $2, redeemed_at = now() WHERE code_hash = $1', [codeHash, license]);
+  await client.query("INSERT INTO lee_t_activation_audit (code_hash, event) VALUES ($1, 'redeemed')", [codeHash]);
+  return license;
 }

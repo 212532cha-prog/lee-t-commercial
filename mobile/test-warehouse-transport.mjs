@@ -14,8 +14,9 @@ import { StockService } from '../src/stock/service.mjs';
 import { createStockRoutes } from '../src/stock/routes.mjs';
 import { CountService } from '../src/count/service.mjs';
 import { createCountRoutes } from '../src/count/routes.mjs';
+import { createCatalogRoutes } from '../src/catalog/routes.mjs';
 
-export async function testWarehouseTransport({ harness, cert, key, pin }) {
+export async function testWarehouseTransport({ classesDirectory, cert, key, pin }) {
   const { pool, engine } = await testPool();
   let server, reserved, client, lines, closed;
   try {
@@ -42,12 +43,13 @@ export async function testWarehouseTransport({ harness, cert, key, pin }) {
     const count = new CountService(pool, auth);
     server = createAuthServer({
       auth, publicOrigin: origin, tls: { cert, key },
+      catalogRoutes: createCatalogRoutes({ auth, catalog }),
       stockRoutes: createStockRoutes({ stock }), countRoutes: createCountRoutes({ auth, count }),
     });
     await new Promise(resolve => reserved.close(resolve));
     server.listen(port, '127.0.0.1');
     await once(server, 'listening');
-    client = spawn('java', ['-Dsun.net.http.allowRestrictedHeaders=true', harness, origin, pin, 'warehouse'],
+    client = spawn('java', ['-Dsun.net.http.allowRestrictedHeaders=true', '-cp', classesDirectory, 'my.leet.warehouse.ProbeHarness', origin, pin, 'warehouse'],
       { stdio: ['pipe', 'pipe', 'inherit'], timeout: 25000 });
     closed = once(client, 'exit');
     lines = createInterface({ input: client.stdout });
@@ -64,10 +66,23 @@ export async function testWarehouseTransport({ harness, cert, key, pin }) {
     };
 
     const login = '/api/auth/login';
+    const mobileAdmin = await request('POST', login, { body: { username: 'CTL LEE', password: adminPassword } });
+    assert.equal(mobileAdmin.user.role, 'admin');
+    assert.equal((await request('GET', '/api/me')).user.id, admin.user.id);
+    await request('REOPEN_ADMINISTRATOR');
+    assert.equal((await request('GET', '/api/me')).user.role, 'admin');
+    const inventoryPath = '/api/products/offline-inventory';
+    const snapshot = await request('GET', inventoryPath);
+    assert.deepEqual(snapshot.products, [{ productCode: product.productCode, name: 'Fixture', quantity: '0' }]);
+    assert.ok(Number.isFinite(Date.parse(snapshot.synchronizedAt)));
+    await request('POST', '/api/auth/logout', { csrf: mobileAdmin.csrf, body: {} });
+    await request('REOPEN_ADMINISTRATOR');
+    await request('GET', '/api/me', { status: 401 });
     const credentials = { username: 'test employee', password };
     assert.equal((await request('POST', login, { body: credentials, status: 403 })).error, 'EMPLOYEE_PAIRING_REQUIRED');
     const signedIn = await request('POST', login, { body: { ...credentials, invitation } });
     assert.equal(signedIn.user.id, id);
+    await request('GET', inventoryPath, { status: 403 });
     assert.equal((await request('GET', '/api/me')).user.realName, '测试员工');
     await request('REOPEN');
     assert.equal((await request('GET', '/api/me', { status: 401 })).error, 'UNAUTHENTICATED');
