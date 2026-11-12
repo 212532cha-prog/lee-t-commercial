@@ -89,7 +89,7 @@ if(-not (Test-Path -LiteralPath $config)){
  $changed=Invoke-CimMethod -InputObject $database -MethodName Change -Arguments @{PathName=$binary;StartMode='Automatic'}
  if($changed.ReturnValue -ne 0){throw ('Could not bind the issuer database runtime. Windows error '+$changed.ReturnValue)}
  $stage='starting issuer database'
- Start-Service $databaseService
+ & (Join-Path $PSScriptRoot 'Start-LicenseCenterPostgres.ps1') -ServiceName $databaseService -PostgresDirectory $pg -ClusterDirectory $cluster
 }
 $stage='configuring issuer backend service'
 if(-not $service){

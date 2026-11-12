@@ -76,7 +76,9 @@ try{
  & $control register -N $ServiceName -D $cluster -S demand -U 'NT AUTHORITY\NetworkService' -w | Out-Null
  if($LASTEXITCODE -ne 0){throw 'Commercial PostgreSQL service registration failed.'}
  $registered=$true
- Start-Service -Name $ServiceName
+ if($LicenseCenter){
+  & (Join-Path $PSScriptRoot 'Start-LicenseCenterPostgres.ps1') -ServiceName $ServiceName -PostgresDirectory $PostgresDirectory -ClusterDirectory $cluster
+ }else{Start-Service -Name $ServiceName}
  $sql="CREATE ROLE $appUser LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '$appSecret';`nCREATE DATABASE $appDatabase OWNER $appUser;`nREVOKE CONNECT ON DATABASE $appDatabase FROM PUBLIC;"
  Invoke-LocalSql postgres postgres $adminSecret $sql | Out-Null
  $listener=Invoke-LocalSql $appUser $appDatabase $appSecret 'SHOW listen_addresses;'

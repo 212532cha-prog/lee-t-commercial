@@ -74,6 +74,7 @@ jobs:
         shell: powershell
         run: |
           ./scripts/windows/Test-CommercialPostgres.ps1
+          ./scripts/windows/Test-LicenseCenterPostgresStartup.ps1
           ./scripts/windows/Test-LocalLicenseCenter.ps1 -DesktopExecutable (Resolve-Path dist/license-center/LeeT-License-Center.exe).Path
       - name: Stage independent runtime and build installer
         shell: powershell
