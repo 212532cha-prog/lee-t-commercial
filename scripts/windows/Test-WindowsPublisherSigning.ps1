@@ -45,7 +45,7 @@ try{
  try{& $sign -Path $fixture -CertificateThumbprint $tls.Thumbprint -ExpectedSubject $tls.Subject -TimestampUrl $policy.TimestampUrl -TestSigning | Out-Null}catch{if($_.Exception.Message -notmatch 'code-signing certificate'){throw};$rejected=$true}
  if(-not $rejected){throw 'A TLS certificate was accepted for publisher signing.'}
  $badTimestamp=$policy.Clone();$badTimestamp.TimestampUrl='http://127.0.0.1:9/';$rejected=$false
- try{& $sign -Path $fixture @badTimestamp -TestSigning | Out-Null}catch{if($_.Exception.Message -notmatch 'timestamp|SignTool'){throw};$rejected=$true}
+ try{& $sign -Path $fixture @badTimestamp -TestSigning -SignToolTimeoutSeconds 15 | Out-Null}catch{if($_.Exception.Message -notmatch 'timestamp|SignTool'){throw};$rejected=$true}
  if(-not $rejected -or (Get-FileHash $fixture).Hash -ne $originalHash){throw 'Timestamp failure did not retain the original file.'}
  & $sign -Path $fixture @policy -TestSigning | Out-Null
  & $sign -Path $fixture @policy -TestSigning -VerifyOnly | Out-Null

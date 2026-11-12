@@ -7,7 +7,8 @@ param(
  [string]$TimestampUrl=$env:LEE_T_SIGN_TIMESTAMP,
  [switch]$TestSigning=($env:LEE_T_SIGN_TEST -eq '1'),
  [switch]$SkipTimestamp,
- [switch]$VerifyOnly
+ [switch]$VerifyOnly,
+ [ValidateRange(15,300)][int]$SignToolTimeoutSeconds=120
 )
 $ErrorActionPreference='Stop'
 if($TestSigning -and $env:GITHUB_ACTIONS -ne 'true'){throw 'Test signing is restricted to disposable CI runners.'}
@@ -26,6 +27,29 @@ for($entry=$file;$null -ne $entry;$entry=$(if($entry -is [IO.FileInfo]){$entry.D
 }
 $stream=$file.OpenRead()
 try{if($stream.ReadByte() -ne 77 -or $stream.ReadByte() -ne 90){throw 'A Windows PE file is required.'}}finally{$stream.Dispose()}
+function Invoke-BoundedSignTool([string[]]$Arguments){
+ # These arguments are switches, thumbprints, URIs and file names; embedded quotes are never valid here.
+ if(@($Arguments | Where-Object {$_ -match '"' -or $_.EndsWith('\')}).Count){throw 'Unsupported SignTool argument.'}
+ $start=[Diagnostics.ProcessStartInfo]::new()
+ $start.FileName=$tool
+ $start.Arguments=(($Arguments | ForEach-Object {'"'+$_+'"'}) -join ' ')
+ $start.UseShellExecute=$false;$start.CreateNoWindow=$true
+ $start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+ $process=[Diagnostics.Process]::new();$process.StartInfo=$start
+ try{
+  if(-not $process.Start()){throw 'SignTool could not start.'}
+  [void]$process.Handle
+  $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
+  if(-not $process.WaitForExit($SignToolTimeoutSeconds*1000)){
+   $process.Kill();$process.WaitForExit()
+   throw 'SignTool signing or timestamp verification timed out; the original file was retained.'
+  }
+  $process.WaitForExit()
+  $stdout.Result | Out-Host
+  $stderr.Result | Out-Host
+  if($process.ExitCode -ne 0){throw 'SignTool signing, timestamping or verification failed; the original file was retained.'}
+ }finally{$process.Dispose()}
+}
 function Assert-PublisherCertificate($Certificate,[bool]$Signing){
  if(-not $Certificate -or $Certificate.Thumbprint -ne $CertificateThumbprint -or $Certificate.Subject -cne $ExpectedSubject){throw 'The file or key does not match the configured publisher identity.'}
  if(@($Certificate.Extensions | Where-Object {$_.Oid.Value -eq '2.5.29.37'} | ForEach-Object {$_.EnhancedKeyUsages} | Where-Object {$_.Value -eq '1.3.6.1.5.5.7.3.3'}).Count -eq 0){throw 'A code-signing certificate is required; TLS and license certificates are not supported.'}
@@ -64,12 +88,10 @@ try{
  if($StoreLocation -eq 'LocalMachine'){$arguments+='/sm'}
  if(-not $SkipTimestamp){$arguments+=@('/tr',$TimestampUrl,'/td','SHA256')}
  $arguments+=$temporary
- & $tool @arguments | Out-Host
- if($LASTEXITCODE -ne 0){throw 'SignTool signing or timestamping failed; the original file was retained.'}
+ Invoke-BoundedSignTool -Arguments $arguments
  $verify=@('verify','/pa','/all','/v')
  if(-not $SkipTimestamp){$verify+='/tw'}
- & $tool @verify $temporary | Out-Host
- if($LASTEXITCODE -ne 0){throw 'SignTool verification failed; the original file was retained.'}
+ Invoke-BoundedSignTool -Arguments ($verify+@($temporary))
  $signature=Assert-PublisherSignature $temporary
  [IO.File]::Replace($temporary,$file.FullName,$null)
  [pscustomobject]@{File=$file.FullName;Subject=$signature.SignerCertificate.Subject;Thumbprint=$signature.SignerCertificate.Thumbprint;Timestamped=($null -ne $signature.TimeStamperCertificate);Sha256=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}

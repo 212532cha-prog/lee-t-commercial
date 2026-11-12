@@ -7,6 +7,7 @@ on:
       - 'desktop/license-center/**'
       - 'scripts/windows/**'
       - 'installer/windows/LeeT-LicenseCenter-Setup.iss'
+      - 'installer/windows/PublisherSigning.iss'
       - 'public/brand/**'
       - '.github/workflows/license-center-standalone.yml'
   workflow_dispatch:
