@@ -1,6 +1,12 @@
 #Requires -RunAsAdministrator
-param([Parameter(Mandatory=$true)][string]$SetupExecutable)
+param(
+ [Parameter(Mandatory=$true)][string]$SetupExecutable,
+ [string]$PublisherCertificateThumbprint,
+ [string]$PublisherSubject,
+ [switch]$TestPublisherSigning
+)
 $ErrorActionPreference='Stop'
+if($TestPublisherSigning -and -not $PublisherCertificateThumbprint){throw 'A test publisher thumbprint is required.'}
 $root=Join-Path $env:ProgramData 'Lee T License Center'
 $install=Join-Path $env:ProgramFiles 'LEE T License Center'
 if((Test-Path $root) -or (Test-Path $install) -or (Get-Service 'LeeTLicenseCenter' -ErrorAction SilentlyContinue) -or (Get-Service 'LeeTLicensePostgreSQL17' -ErrorAction SilentlyContinue)){
@@ -23,6 +29,11 @@ function Install-Issuer {
  if($process.ExitCode -ne 0){throw 'Standalone installer failed.'}
 }
 function Test-Signing {
+ if($PublisherCertificateThumbprint){
+  foreach($name in @('LeeT-License-Center.exe','LeeTLicenseCenterService.exe','unins000.exe')){
+   & (Join-Path $PSScriptRoot 'Sign-WindowsPublisherFile.ps1') -Path (Join-Path $install $name) -CertificateThumbprint $PublisherCertificateThumbprint -ExpectedSubject $PublisherSubject -TestSigning:$TestPublisherSigning -VerifyOnly | Out-Null
+  }
+ }
  $process=Start-Process -FilePath (Join-Path $install 'LeeT-License-Center.exe') -ArgumentList @('--test',('"'+$root+'"'),('"'+$passwordFile+'"'),('"'+$requestFile+'"'),('"'+$outputFile+'"')) -PassThru
  if(-not $process.WaitForExit(90000)){$process.Kill();throw 'Installed signing test timed out.'}
  if($process.ExitCode -ne 0){throw 'Installed desktop failed customer/payment/signing or invalid-password rejection.'}

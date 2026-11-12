@@ -5,6 +5,7 @@
   #define BuildOutput "output"
 #endif
 [Setup]
+#include "PublisherSigning.iss"
 SetupIconFile=..\..\public\brand\lee-t.ico
 AppId={{438C12B7-0D5E-45D7-A4F0-CCB693E4CFE9}
 AppName=LEE T License Center

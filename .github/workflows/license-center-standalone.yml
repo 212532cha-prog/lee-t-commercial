@@ -47,7 +47,7 @@ jobs:
   windows:
     needs: verify
     runs-on: windows-2022
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Provision native PostgreSQL 17 for acceptance
@@ -96,6 +96,10 @@ jobs:
         shell: powershell
         run: |
           ./scripts/windows/Test-LicenseCenterInstaller.ps1 -SetupExecutable (Join-Path $env:RUNNER_TEMP 'license-center-setup\LEE-T-License-Center-Setup.exe')
+      - name: Verify real publisher signing and signed installed lifecycle
+        shell: powershell
+        run: |
+          ./scripts/windows/Test-WindowsPublisherSigning.ps1 -Product LicenseCenter -PayloadDirectory (Join-Path $env:RUNNER_TEMP 'license-center-payload')
       - name: Hash verified installer
         shell: powershell
         run: |
