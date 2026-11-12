@@ -30,6 +30,7 @@ export function mountPairingScreen({ document, storage, native, scan, request, r
   }
   let warehouse = readWarehouse(keys.warehouse);
   let administratorWarehouse = readWarehouse(keys.administrator);
+  const savedAdministrator = () => administratorWarehouse || warehouse;
   let locale = read(keys.language);
   if (!Object.hasOwn(copy, locale)) locale = 'en';
   let status = native ? null : 'unsupported';
@@ -61,22 +62,27 @@ export function mountPairingScreen({ document, storage, native, scan, request, r
     document.documentElement.lang = locale === 'zh' ? 'zh-Hans' : locale;
     language.value = locale;
     for (const id of ['kicker', 'footer']) element(id).textContent = words[id];
-    element('title').textContent = words[warehouse ? 'pairedTitle' : 'title'];
-    element('description').textContent = words[warehouse ? 'pairedDescription' : 'description'];
-    element('steps-title').textContent = words[warehouse ? 'pairedStepsTitle' : 'stepsTitle'];
-    element('steps').hidden = !!warehouse;
+    element('title').textContent = words[warehouse || administratorWarehouse ? 'pairedTitle' : 'title'];
+    element('description').textContent = words[warehouse || administratorWarehouse ? 'pairedDescription' : 'description'];
+    element('steps-title').textContent = words.pairedStepsTitle;
+    element('steps').hidden = !!(warehouse || administratorWarehouse);
+    for (const id of ['administrator-title', 'employee-title', 'saved-title', 'saved-hint', 'employee-hint', 'access-settings']) {
+      element(id).textContent = words[id];
+    }
+    element('administrator-hint').textContent = words[savedAdministrator() ? 'administrator-ready' : 'administrator-hint'];
+    element('saved-access').hidden = !savedAdministrator();
     element('steps').querySelectorAll('li').forEach((step, i) => { step.textContent = words.steps[i]; });
     resume.hidden = !warehouse;
     resume.textContent = words.resume;
     scanButton.textContent = words[warehouse ? 'rescan' : 'scan'];
-    scanButton.className = warehouse ? 'secondary' : 'primary';
+    scanButton.className = 'secondary';
     resume.disabled = scanButton.disabled = busy || !native;
     administrator.disabled = administratorScan.disabled = busy || !native;
-    administrator.textContent = words.administrator;
+    administrator.textContent = words[savedAdministrator() ? 'administrator' : 'administratorConnect'];
     administratorScan.textContent = words.administratorScan;
-    administratorScan.hidden = !administratorWarehouse;
-    offline.hidden = !administratorWarehouse || !offlineInventory;
-    forget.hidden = !administratorWarehouse || !clearAdministrator;
+    administratorScan.hidden = !savedAdministrator();
+    offline.hidden = !savedAdministrator() || !offlineInventory;
+    forget.hidden = !savedAdministrator() || !clearAdministrator;
     offline.disabled = forget.disabled = busy || !native;
     offline.textContent = words.offlineTitle;
     forget.textContent = words.offlineForget;
@@ -111,7 +117,7 @@ export function mountPairingScreen({ document, storage, native, scan, request, r
     failed = false;
     snapshot = null;
     const admin = action === 'administrator' || action === 'administrator-scan';
-    const needsScan = action === 'scan' || action === 'administrator-scan' || (admin && !administratorWarehouse);
+    const needsScan = action === 'scan' || action === 'administrator-scan' || (admin && !savedAdministrator());
     progress(needsScan ? 'scanning' : 'connecting');
     try {
       if (needsScan) {
@@ -121,7 +127,8 @@ export function mountPairingScreen({ document, storage, native, scan, request, r
         progress(opened ? null : 'cancelled');
       } else {
         await resumeWarehouse({ ...(admin ? administratorConnection : connection),
-          warehouse: admin ? administratorWarehouse : warehouse, administrator: admin });
+          warehouse: admin ? savedAdministrator() : warehouse, administrator: admin });
+        if (admin && !administratorWarehouse) administratorConnection.remember(warehouse);
         progress(null);
       }
     } catch (error) {
@@ -144,14 +151,14 @@ export function mountPairingScreen({ document, storage, native, scan, request, r
   administrator.addEventListener('click', () => run('administrator'));
   administratorScan.addEventListener('click', () => run('administrator-scan'));
   offline.addEventListener('click', async () => {
-    if (busy || !administratorWarehouse) return;
+    if (busy || !savedAdministrator()) return;
     busy = true;
     snapshot = null;
     failed = false;
     status = null;
     render();
     try {
-      const value = await offlineInventory(administratorWarehouse);
+      const value = await offlineInventory(savedAdministrator());
       if (Number.isFinite(Date.parse(value?.synchronizedAt)) && Array.isArray(value.products) && value.products.length <= 5000 &&
           value.products.every(product => ['productCode', 'name', 'quantity'].every(key => typeof product?.[key] === 'string'))) {
         snapshot = value;
@@ -164,12 +171,12 @@ export function mountPairingScreen({ document, storage, native, scan, request, r
     }
   });
   forget.addEventListener('click', async () => {
-    if (busy || !administratorWarehouse) return;
+    if (busy || !savedAdministrator()) return;
     busy = true;
     snapshot = null;
     render();
     try {
-      await clearAdministrator(administratorWarehouse);
+      await clearAdministrator(savedAdministrator());
       failed = false;
       status = 'offlineCleared';
     } catch {

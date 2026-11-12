@@ -32,7 +32,7 @@ test('mobile pairing screen guides camera recovery, discovery, and reopening at 
         return { status: 200, url, data: { schema: 1, serverId } };
       },
       discover: () => new Promise(resolve => { fixture.resolveDiscovery = resolve; }),
-      open: async options => fixture.opens.push(options),
+      open: async options => { if (fixture.failOpen) throw Error('native failed'); fixture.opens.push(options); },
       offlineInventory: async () => fixture.cleared ? {} : {
         synchronizedAt: '2026-11-09T01:00:00Z',
         products: [{productCode: 'P001', name: '<img src=x>', quantity: '14'}],
@@ -74,15 +74,15 @@ test('mobile pairing screen guides camera recovery, discovery, and reopening at 
   await page.getByText(/Looking for your warehouse/).waitFor();
   assert.equal(await scan.isDisabled(), true);
   await page.evaluate(() => globalThis.fixture.resolveDiscovery(['192.168.1.45']));
-  await page.getByRole('button', { name: 'Open warehouse' }).waitFor();
+  await page.getByRole('button', { name: 'Employee sign-in' }).waitFor();
   assert.equal(await page.evaluate(() => globalThis.fixture.opens[0].route), '192.168.1.45');
 
   await page.getByRole('combobox').selectOption('ms');
-  await page.getByRole('button', { name: 'Buka gudang' }).waitFor();
+  await page.getByRole('button', { name: 'Log masuk pekerja' }).waitFor();
   await page.getByRole('combobox').selectOption('zh');
-  await page.getByRole('button', { name: '打开仓库' }).waitFor();
+  await page.getByRole('button', { name: '员工登录' }).waitFor();
   await page.reload();
-  await page.getByRole('button', { name: '打开仓库' }).click();
+  await page.getByRole('button', { name: '员工登录' }).click();
   await page.waitForFunction(() => globalThis.fixture.opens.length === 1);
   assert.equal(await page.evaluate(() => globalThis.fixture.scans), 0);
   assert.equal(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth), true);
@@ -90,6 +90,11 @@ test('mobile pairing screen guides camera recovery, discovery, and reopening at 
   await page.evaluate(() => { globalThis.fixture.granted = true; });
   const administrator = page.getByRole('button', { name: '管理员登录', exact: true });
   await administrator.click();
+  await page.waitForFunction(() => globalThis.fixture.opens.length === 2);
+  assert.equal(await page.evaluate(() => globalThis.fixture.scans), 0, 'Known warehouse opens administrator login without rescanning');
+  assert.equal(await page.evaluate(() => globalThis.fixture.opens[1].administrator), true);
+  assert.equal(await page.evaluate(() => globalThis.fixture.opens[1].url.includes('#pairing')), false, 'Administrator login must not reuse an employee invitation');
+  await page.getByRole('button', { name: '扫描新的管理员连接码' }).click();
   await page.getByText(/正在局域网寻找仓库/).waitFor();
   await page.evaluate(() => globalThis.fixture.resolveDiscovery(['192.168.1.46']));
   await page.getByRole('button', { name: '扫描新的管理员连接码' }).waitFor();
@@ -103,15 +108,34 @@ test('mobile pairing screen guides camera recovery, discovery, and reopening at 
   await page.waitForFunction(() => globalThis.fixture.opens.length === 1);
   assert.deepEqual(await page.evaluate(() => [globalThis.fixture.scans, globalThis.fixture.opens[0].route]), [0, '192.168.1.46']);
   assert.equal(await page.evaluate(() => globalThis.fixture.opens[0].administrator), true);
+  await page.evaluate(() => { globalThis.fixture.failOpen = true; });
+  await administrator.click();
+  await page.getByText(/登录页未能打开/).waitFor();
+  assert.equal(await administrator.isEnabled(), true, 'Failure must allow retry');
+  await page.evaluate(() => { globalThis.fixture.failOpen = false; });
   await page.getByRole('button', { name: '查看离线库存' }).click();
   await page.getByText(/最后同步时间/).waitFor();
   await page.getByRole('cell', { name: '<img src=x>' }).waitFor();
   await page.getByRole('cell', { name: '14' }).waitFor();
   assert.equal(await page.locator('#offline-rows img').count(), 0);
   assert.equal(await page.evaluate(() => globalThis.fixture.opens.length), 1);
+  await page.getByText('登录记录设置', {exact:true}).click();
   await page.getByRole('button', { name: '清除管理员登录记录' }).click();
   await page.getByText('已清除管理员登录记录和离线库存。').waitFor();
   assert.equal(await page.locator('#offline-panel').isVisible(), false);
   await page.getByRole('button', { name: '查看离线库存' }).click();
   await page.getByText(/没有可用的离线库存/).waitFor();
+  await page.evaluate(() => localStorage.removeItem('leet-verified-warehouse'));
+  await page.reload();
+  await page.getByRole('heading', {name:'选择登录身份'}).waitFor();
+  assert.equal(await page.getByRole('button', {name:'员工登录',exact:true}).isVisible(), false);
+  assert.equal(await administrator.isVisible(), true, 'Administrator-only pairing remains a first-class entrance');
+  await administrator.click();
+  await page.waitForFunction(() => globalThis.fixture.opens.length === 1);
+  assert.equal(await page.evaluate(() => globalThis.fixture.scans), 0);
+  for (const locale of ['en','zh','ms']) {
+    await page.getByRole('combobox').selectOption(locale);
+    assert.equal(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth), true);
+    assert.equal(await page.locator('#administrator').evaluate(button => button.getBoundingClientRect().height >= 44), true);
+  }
 });

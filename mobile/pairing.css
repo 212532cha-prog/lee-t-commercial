@@ -41,3 +41,10 @@ button:disabled { opacity: .62; cursor: default; }
 .feedback p { margin: 0; }
 .feedback button { margin-top: .55rem; }
 footer { margin: 1rem 0; font-size: .85rem; }
+
+.access-group { display: grid; gap: .65rem; padding: .9rem 0; min-width: 0; }
+.access-group + .access-group { border-top: 1px solid #dce6e7; }
+.access-group h3 { margin: 0; font-size: 1.12rem; }
+.hint { margin: 0 0 .25rem; font-size: .87rem; color: #49616e; }
+.access-group summary { cursor: pointer; padding: .65rem 0; min-height: 44px; }
+.access-group details button { margin-top: .5rem; }

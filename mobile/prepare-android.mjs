@@ -25,7 +25,7 @@ if (!manifest.includes(networkConfig)) {
 let workspaceManifest = readFileSync(manifestPath, 'utf8');
 if (!workspaceManifest.includes('android:name=".WarehouseActivity"')) {
   workspaceManifest = workspaceManifest.replace('</application>',
-    '<activity android:name=".WarehouseActivity" android:exported="false" />\n    </application>');
+    '<activity android:name=".WarehouseActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />\n    </application>');
 }
 if (!workspaceManifest.includes('android:name="android.permission.CAMERA"')) {
   workspaceManifest = workspaceManifest.replace('</manifest>',
@@ -55,3 +55,40 @@ for (const name of ['index.html', 'app.css', 'app.js', 'admin.js', 'backup.js', 
 copyFileSync('../node_modules/jsqr/dist/jsQR.js', workspaceAssets + '/vendor/jsqr.js');
 copyFileSync('../node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-400-normal.woff2',
   workspaceAssets + '/fonts/business-regular.woff2');
+
+// Instrument the exact generated application, including its bundled WebView assets.
+const appGradle = 'android/app/build.gradle';
+let gradle = readFileSync(appGradle, 'utf8');
+gradle = gradle.replace(/versionCode \d+/, 'versionCode 80504').replace(/versionName "[^"]+"/, 'versionName "0.8.5-mobile.4"');
+if (!gradle.includes('androidx.test.runner.AndroidJUnitRunner')) throw Error('Android instrumentation runner missing');
+writeFileSync(appGradle, gradle);
+const androidTests = 'android/app/src/androidTest/java/my/leet/warehouse';
+mkdirSync(androidTests, { recursive: true });
+copyFileSync('android-tests/WarehouseFlowTest.java', androidTests + '/WarehouseFlowTest.java');
+
+// Keep the generated package-identity smoke test, fixing its template placeholder.
+const identityTest = 'android/app/src/androidTest/java/com/getcapacitor/myapp/ExampleInstrumentedTest.java';
+if (existsSync(identityTest)) {
+  const identitySource = readFileSync(identityTest, 'utf8');
+  writeFileSync(identityTest, identitySource.replace('assertEquals("com.getcapacitor.app", appContext.getPackageName())',
+    'assertEquals("my.leet.warehouse", appContext.getPackageName())'));
+}
+mkdirSync(workspaceAssets + '/brand', { recursive: true });
+copyFileSync('../public/brand/lee-t-logo.jpg', workspaceAssets + '/brand/lee-t-logo.jpg');
+
+// Keep all generated library instrumentation suites enabled. Older Cordova test
+// dependencies split jdk7/jdk8 classes that are already inside Kotlin >= 1.8.
+const rootGradle = 'android/build.gradle';
+const marker = '// LEE T Kotlin test dependency alignment';
+let rootBuild = readFileSync(rootGradle, 'utf8');
+if (!rootBuild.includes(marker)) {
+  rootBuild += `
+${marker}
+subprojects { child ->
+    child.plugins.withId('com.android.library') {
+        child.dependencies.add('androidTestImplementation', child.dependencies.platform('org.jetbrains.kotlin:kotlin-bom:1.8.22'))
+    }
+}
+`;
+  writeFileSync(rootGradle, rootBuild);
+}

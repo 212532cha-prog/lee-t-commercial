@@ -229,3 +229,30 @@ test('bundled Android workspace dispatches employee login, stock writes and live
  assert.ok(paths.includes('/api/auth/login'));
  assert.ok(paths.some(path=>/^\/api\/count\/tasks\/[^/]+\/events\?/.test(path)));
 });
+
+test('late team response cannot pull a phone back from another module',async()=>{
+ const page=await login('CTL LEE',true,'en');
+ let entered,release;
+ const started=new Promise(resolve=>entered=resolve),gate=new Promise(resolve=>release=resolve);
+ await page.route('**/api/employees',async route=>{entered();await gate;await route.continue();});
+ await nav(page,'team');await started;
+ await nav(page,'profile');await page.locator('#admin-profile').waitFor();
+ const delivered=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/employees');
+ release();await (await delivered).finished();
+ await page.evaluate(()=>new Promise(resolve=>globalThis.requestAnimationFrame(()=>globalThis.requestAnimationFrame(resolve))));
+ assert.equal(await page.locator('.app-layout').getAttribute('data-page'),'profile');
+ assert.equal(await page.locator('#admin-profile').isVisible(),true);
+});
+
+test('phone module change replaces the previous form with loading feedback until new data is ready',async()=>{
+ const page=await login('CTL LEE',true,'en');
+ await nav(page,'profile');await page.locator('#admin-profile').waitFor();
+ let entered,release;const started=new Promise(resolve=>entered=resolve),gate=new Promise(resolve=>release=resolve);
+ await page.route('**/api/master-data',async route=>{entered();await gate;await route.continue();});
+ await nav(page,'exports');await started;
+ try {
+  assert.equal(await page.locator('#admin-profile').isVisible(),false,'Previous account form must not remain under the export tab');
+  assert.equal(await page.locator('.main-panel').getByText('Loading…',{exact:true}).isVisible(),true);
+ } finally {release();}
+ await page.locator('#admin-export').waitFor();
+});

@@ -23,12 +23,23 @@
       <div class="card-heading"><div class="qr-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></div><h2 id="steps-title"></h2></div>
       <ol id="steps"><li></li><li></li></ol>
       <div class="actions" id="actions">
-        <button id="resume" class="primary" type="button" hidden></button>
-        <button id="scan" class="primary" type="button" disabled>Scan employee pairing code</button>
-        <button id="administrator" class="secondary" type="button" disabled>Administrator sign-in</button>
-        <button id="administrator-scan" class="secondary" type="button" hidden>Scan a new administrator code</button>
-        <button id="offline-inventory" class="secondary" type="button" hidden>View offline inventory</button>
-        <button id="clear-administrator" class="secondary" type="button" hidden>Forget saved administrator access</button>
+        <section class="access-group" aria-labelledby="administrator-title">
+          <h3 id="administrator-title"></h3><p id="administrator-hint" class="hint"></p>
+          <button id="administrator" class="primary" type="button" disabled></button>
+          <button id="administrator-scan" class="secondary" type="button"></button>
+        </section>
+        <section class="access-group" aria-labelledby="employee-title">
+          <h3 id="employee-title"></h3><p id="employee-hint" class="hint"></p>
+          <button id="resume" class="primary" type="button" hidden></button>
+          <button id="scan" class="secondary" type="button" disabled></button>
+        </section>
+        <section class="access-group" id="saved-access" aria-labelledby="saved-title" hidden>
+          <h3 id="saved-title"></h3><p id="saved-hint" class="hint"></p>
+          <button id="offline-inventory" class="secondary" type="button" hidden></button>
+          <details><summary id="access-settings"></summary>
+            <button id="clear-administrator" class="secondary" type="button" hidden></button>
+          </details>
+        </section>
       </div>
       <div class="feedback" id="feedback" hidden>
         <p id="status" role="status" aria-live="polite"></p>

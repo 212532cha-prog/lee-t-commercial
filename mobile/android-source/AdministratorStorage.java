@@ -25,7 +25,10 @@ final class AdministratorStorage {
     private final byte[] identity;
 
     AdministratorStorage(Context context, String origin, String fingerprint) throws Exception {
-        if (origin == null || !origin.equals(WarehouseIdentityProbe.httpsOrigin(origin)) ||
+        java.net.URI endpoint = origin == null ? null : new java.net.URI(origin);
+        if (endpoint == null || WarehouseIdentityProbe.httpsOrigin(origin) == null ||
+                !endpoint.getRawPath().isEmpty() || endpoint.getRawQuery() != null || endpoint.getRawFragment() != null ||
+                !origin.equals("https://" + endpoint.getRawAuthority()) ||
                 fingerprint == null || !fingerprint.matches("[a-f0-9]{64}")) {
             throw new IllegalArgumentException("Invalid administrator warehouse identity");
         }
@@ -83,10 +86,9 @@ final class AdministratorStorage {
     void saveInventory(String token, JSONObject inventory) throws Exception {
         synchronized (AdministratorStorage.class) {
             JSONObject record = readLocked();
-            if (record != null && record.getString("token").equals(token)) {
-                record.put("inventory", inventory);
-                saveLocked(record);
-            }
+            if (record == null || !record.getString("token").equals(token)) throw new IllegalStateException("Administrator access expired");
+            record.put("inventory", inventory);
+            saveLocked(record);
         }
     }
 
