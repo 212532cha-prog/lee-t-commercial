@@ -75,7 +75,7 @@ public class WarehouseActivity extends Activity {
         }
         try {
             String type = contentType == null ? "application/octet-stream" : contentType.split(";", 2)[0];
-            String extension = type.equals("image/png") ? ".png" : type.equals("application/pdf") ? ".pdf" :
+            String extension = type.equals("image/png") ? ".png" : type.equals("image/svg+xml") ? ".svg" : type.equals("application/pdf") ? ".pdf" :
                 type.contains("spreadsheetml") ? ".xlsx" : type.equals("application/json") ? ".json" : ".whb";
             downloadFile = file; downloadId = id;
             android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT)

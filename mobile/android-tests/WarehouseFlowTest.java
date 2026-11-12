@@ -83,7 +83,7 @@ public class WarehouseFlowTest {
         waitFor("!document.querySelector('.main-panel').innerText.includes('Loading…')");
     }
     private JSONObject api(String path, String method, JSONObject body) throws Exception {
-        js("window.qaResult=null;window.qaError=null;import('/native-transport.js').then(async m=>{let s=await(await m.warehouseFetch('/api/me')).json();let r=await m.warehouseFetch(" +
+        js("window.qaResult=null;window.qaError=null;import('https://appassets.androidplatform.net/native-transport.js').then(async m=>{let s=await(await m.warehouseFetch('/api/me')).json();let r=await m.warehouseFetch(" +
             JSONObject.quote(path) + ",{method:"+JSONObject.quote(method)+",headers:{'X-CSRF-Token':s.csrf,'Content-Type':'application/json'},body:"+
             (body == null ? "undefined" : JSONObject.quote(body.toString())) + "});window.qaResult={status:r.status,body:await r.json()}}).catch(e=>window.qaError=String(e))");
         waitFor("window.qaResult!==null || window.qaError!==null");
@@ -93,6 +93,27 @@ public class WarehouseFlowTest {
     private void scan(String selector) throws Exception {
         input(selector,args.getString("token"));
         js("document.querySelector("+JSONObject.quote(selector)+").form.requestSubmit()");
+    }
+    private File saveFile(String path, String name) throws Exception {
+        File output = new File(instrumentation.getTargetContext().getCacheDir(), name);
+        Intent result = new Intent().setData(Uri.fromFile(output));
+        Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(new IntentFilter(Intent.ACTION_CREATE_DOCUMENT), new Instrumentation.ActivityResult(Activity.RESULT_OK,result),true);
+        try {
+            js("window.qaDownload=null;import('https://appassets.androidplatform.net/native-transport.js').then(async m=>window.qaDownload=await m.warehouseDownload(" + JSONObject.quote(path) + ")).catch(e=>window.qaDownload={error:String(e)})");
+            waitFor("window.qaDownload!==null");
+            assertEquals("File must be saved, not silently discarded", "true", js("window.qaDownload.saved===true"));
+            assertTrue(output.isFile()); assertTrue(output.length()>0);
+            return output;
+        } finally { instrumentation.removeMonitor(monitor); }
+    }
+    private void chooseFile(String selector, File file) throws Exception {
+        Uri uri = androidx.core.content.FileProvider.getUriForFile(instrumentation.getTargetContext(), "my.leet.warehouse.fileprovider", file);
+        Intent result = new Intent().setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(new IntentFilter(Intent.ACTION_OPEN_DOCUMENT),new Instrumentation.ActivityResult(Activity.RESULT_OK,result),true);
+        try {
+            click(selector);
+            waitFor("document.querySelector(" + JSONObject.quote(selector) + ").files.length===1");
+        } finally { instrumentation.removeMonitor(monitor); }
     }
     private AdministratorStorage storage() throws Exception {
         return new AdministratorStorage(instrumentation.getTargetContext(), args.getString("origin"), args.getString("pin"));
@@ -143,7 +164,7 @@ public class WarehouseFlowTest {
             waitFor("!!document.querySelector('[data-catalog=edit]') && document.querySelector('.main-panel').innerText.includes('Phone bolt updated')");
             assertEquals("PATCH product edit",200,api("/api/products/"+args.getString("product"),"GET",null).getInt("status"));
             // Actual native binary upload and protected image reads, not a fetch mock.
-            js("window.qaUpload=null;import('/native-transport.js').then(async m=>{let s=await(await m.warehouseFetch('/api/me')).json();let p=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWNQWdiFFTEMLQkAoChTwXaTP6IAAAAASUVORK5CYII='),c=>c.charCodeAt(0));let r=await m.warehouseFetch('/api/products/"+args.getString("product")+"/photo',{method:'PUT',headers:{'Content-Type':'image/png','X-CSRF-Token':s.csrf},body:new Blob([p],{type:'image/png'})});window.qaUpload=r.status}).catch(e=>window.qaUpload=String(e))");
+            js("window.qaUpload=null;import('https://appassets.androidplatform.net/native-transport.js').then(async m=>{let s=await(await m.warehouseFetch('/api/me')).json();let p=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWNQWdiFFTEMLQkAoChTwXaTP6IAAAAASUVORK5CYII='),c=>c.charCodeAt(0));let r=await m.warehouseFetch('/api/products/"+args.getString("product")+"/photo',{method:'PUT',headers:{'Content-Type':'image/png','X-CSRF-Token':s.csrf},body:new Blob([p],{type:'image/png'})});window.qaUpload=r.status}).catch(e=>window.qaUpload=String(e))");
             waitFor("window.qaUpload!==null"); assertEquals("200",js("window.qaUpload"));
             nav("products"); click("[data-catalog='detail']");
             waitFor("document.querySelector('.product-image')?.naturalWidth>0 && document.querySelector('.qr-image')?.naturalWidth>0");
@@ -164,16 +185,26 @@ public class WarehouseFlowTest {
             js("document.querySelector('#admin-profile').requestSubmit()");
             waitFor("document.querySelector('.workspace h1')?.innerText==='Phone Administrator'");
 
-            // Android's save-document result writes the exact QR bytes into the chosen location.
-            File output = new File(instrumentation.getTargetContext().getCacheDir(),"qa-qr.png");
-            Intent result = new Intent().setData(Uri.fromFile(output));
-            Instrumentation.ActivityMonitor monitor = instrumentation.addMonitor(new IntentFilter(Intent.ACTION_CREATE_DOCUMENT),new Instrumentation.ActivityResult(Activity.RESULT_OK,result),true);
-            js("window.qaDownload=null;import('/native-transport.js').then(async m=>window.qaDownload=await m.warehouseDownload('/api/products/"+args.getString("product")+"/qr/download')).catch(e=>window.qaDownload={error:String(e)})");
-            waitFor("window.qaDownload!==null");
-            assertEquals("true",js("window.qaDownload.saved===true"));
-            assertTrue(output.isFile()); byte[] png=Files.readAllBytes(output.toPath());
-            assertEquals((byte)0x89,png[0]); assertEquals('P',png[1]);
-            instrumentation.removeMonitor(monitor); output.delete();
+            // Android save-document, export generation, file picker, streamed upload and server archive verification.
+            File output = saveFile("/api/products/"+args.getString("product")+"/qr/download", "qa-qr.svg");
+            String svg = new String(Files.readAllBytes(output.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue("Download must contain the real vector QR", svg.contains("<svg") && svg.contains("<path")); output.delete();
+            nav("exports");
+            js("document.querySelector('#admin-export').requestSubmit()");
+            waitFor("!!document.querySelector('a[href^=\"/api/exports/\"]')");
+            String exportPath = (String)new org.json.JSONTokener(js("document.querySelector('a[href^=\"/api/exports/\"]').getAttribute('href')")).nextValue();
+            File workbook = saveFile(exportPath,"qa-inventory.xlsx");
+            try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(workbook)) {
+                assertNotNull(zip.getEntry("xl/worksheets/sheet1.xml"));
+            }
+            workbook.delete();
+            nav("backups");
+            File archive = saveFile("/api/backups/download-full","qa-full.whb");
+            chooseFile("#backup-upload input[type=file]", archive);
+            js("document.querySelector('#backup-upload').requestSubmit()");
+            waitFor("!!document.querySelector('[data-backup=restore-upload]')");
+            click("[data-backup=clear]"); waitFor("!document.querySelector('[data-backup=restore-upload]')");
+            archive.delete();
 
             // A transient API failure is visible and recoverable, without clearing encrypted inventory.
             assertEquals(200,api("/api/test-control?token="+args.getString("control")+"&offline=1","GET",null).getInt("status"));
@@ -197,6 +228,7 @@ public class WarehouseFlowTest {
             instrumentation.runOnMainSync(()->web.reload()); waitFor("!!document.querySelector('.workspace')");
             nav("count"); click("[data-count='accept']");
             waitFor("document.querySelector('.main-panel').innerText.includes('Connected. Ready to count.')");
+            waitFor("document.querySelector('.count-photo')?.naturalWidth>0");
             scan("#count-token"); waitFor("document.querySelector('[data-count-quantity]')?.value==='1'");
             click("[data-count='submit']"); waitFor("document.querySelector('.main-panel').innerText.includes('Report submitted') || document.querySelector('#message').innerText.includes('Report submitted')");
             assertEquals("Count must not alter live stock", "0",api("/api/products/"+args.getString("product"),"GET",null).getJSONObject("body").getJSONObject("product").getString("quantity"));

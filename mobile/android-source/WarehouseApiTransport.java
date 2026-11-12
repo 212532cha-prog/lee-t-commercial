@@ -97,12 +97,16 @@ final class WarehouseApiTransport {
 
     byte[] readPhoto(String path) throws Exception {
         if (!path.matches("/api/products/[a-fA-F0-9-]{36}/(?:photo|qr)") &&
-            !path.matches("/api/me/avatar(?:\\?version=[0-9]+)?") && !path.equals("/api/commercial/administrator-qr")) return null;
-        HttpsURLConnection connection = connection(endpoint(path), "image/jpeg,image/png");
+            !path.matches("/api/me/avatar(?:\\?version=[0-9]+)?") &&
+            !path.matches("/api/count/tasks/[a-fA-F0-9-]{36}/photo/[a-fA-F0-9-]{36}") &&
+            !path.equals("/api/commercial/administrator-qr")) return null;
+        HttpsURLConnection connection = connection(endpoint(path), "image/jpeg,image/png,image/svg+xml");
         try {
             if (connection.getResponseCode() != 200) return null;
             String type = connection.getContentType();
-            if (!"image/jpeg".equals(type) && !"image/png".equals(type)) return null;
+            type = type == null ? "" : type.split(";", 2)[0].trim();
+            if (!"image/jpeg".equals(type) && !"image/png".equals(type) &&
+                !(path.endsWith("/qr") && "image/svg+xml".equals(type))) return null;
             try (InputStream input = connection.getInputStream()) {
                 return readBytes(input, 5 * 1024 * 1024);
             }
