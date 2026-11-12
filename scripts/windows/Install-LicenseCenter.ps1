@@ -82,8 +82,12 @@ if(-not (Test-Path -LiteralPath $config)){
  # Change only this issuer service's executable; never alter the warehouse service.
  $stage='binding issuer database runtime'
  $binary='"'+(Join-Path $pg 'bin\pg_ctl.exe')+'" runservice -N "'+$databaseService+'" -D "'+$cluster+'" -w'
- & sc.exe config $databaseService binPath= $binary start= auto | Out-Null
- if($LASTEXITCODE -ne 0){throw 'Could not bind the issuer database to its standalone runtime.'}
+ # Pass the quoted binary path as structured data; native sc.exe argument quoting
+ # is unreliable for a freshly re-registered service under Windows PowerShell 5.
+ $database=Get-CimInstance Win32_Service -Filter "Name='$databaseService'"
+ if(-not $database){throw 'Restored issuer database service could not be located.'}
+ $changed=Invoke-CimMethod -InputObject $database -MethodName Change -Arguments @{PathName=$binary;StartMode='Automatic'}
+ if($changed.ReturnValue -ne 0){throw ('Could not bind the issuer database runtime. Windows error '+$changed.ReturnValue)}
  $stage='starting issuer database'
  Start-Service $databaseService
 }
