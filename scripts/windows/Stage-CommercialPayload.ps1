@@ -67,7 +67,18 @@ try{
   if($LASTEXITCODE -ne 0){throw 'Staged runtime dependencies failed to load.'}
  }finally{Pop-Location}
  & (Join-Path $PSScriptRoot 'Build-Service.ps1') -OutputPath (Join-Path $app 'WarehouseService.exe')
- [IO.Directory]::Move($temporary,$output)
+ # Windows scanners and just-exited native dependency probes may briefly
+ # retain a directory handle. Keep publication atomic and retry only sharing
+ # failures; never merge into or overwrite an existing payload directory.
+ $published=$false
+ for($attempt=0;$attempt -lt 20;$attempt++){
+  try{[IO.Directory]::Move($temporary,$output);$published=$true;break}
+  catch [IO.IOException],[UnauthorizedAccessException]{
+   if((Test-Path -LiteralPath $output) -or $attempt -eq 19){throw}
+   Start-Sleep -Milliseconds 500
+  }
+ }
+ if(-not $published){throw 'Cannot publish the complete installer payload.'}
  Write-Output ('Commercial installer payload staged at '+$output)
 }finally{
  $env:Path=$previousPath

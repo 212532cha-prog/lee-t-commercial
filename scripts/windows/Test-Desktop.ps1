@@ -91,6 +91,71 @@ try {
   $activationSettings.PayloadDirectory=$bootstrap
  }
  Write-Output 'Installer cache preserves identity and issuer across freshly extracted bootstraps.'
+
+ # Regression: an unactivated cache from the previous publisher must accept the
+ # new bundled public trust without losing the exported installation identity.
+ foreach($folder in @('desktop','runtime','app\scripts')){
+  New-Item -ItemType Directory -Path (Join-Path $bootstrap $folder) -Force | Out-Null
+ }
+ foreach($file in @('desktop\LeeT.Warehouse.exe','runtime\node.exe','app\scripts\desktop-activation.mjs')){
+  Copy-Item -LiteralPath (Join-Path $activationPayload $file) -Destination (Join-Path $bootstrap $file)
+ }
+ $publisher=Get-Content -LiteralPath (Join-Path $root 'installer\windows\publisher.json') -Raw | ConvertFrom-Json
+ $nextIssuer=Join-Path $activationRoot 'replacement-issuer'
+ New-Item -ItemType Directory -Path $nextIssuer | Out-Null
+ $previousPublic=$env:LEE_T_OFFLINE_ISSUER_PUBLIC_KEY
+ $previousKeyId=$env:LEE_T_OFFLINE_ISSUER_KEY_ID
+ try{
+  $env:LEE_T_OFFLINE_ISSUER_PUBLIC_KEY=$publisher.publicKeySpkiBase64
+  $env:LEE_T_OFFLINE_ISSUER_KEY_ID=$publisher.keyId
+  & node (Join-Path $root 'scripts\windows\prepare-offline-issuer.mjs') $nextIssuer
+  if($LASTEXITCODE -ne 0){throw 'The configured publisher could not be staged.'}
+ }finally{
+  $env:LEE_T_OFFLINE_ISSUER_PUBLIC_KEY=$previousPublic
+  $env:LEE_T_OFFLINE_ISSUER_KEY_ID=$previousKeyId
+ }
+ $activationSettings.IssuerPublicKey=Join-Path $nextIssuer 'issuer-public.pem'
+ $activationSettings.IssuerKeyId=$publisher.keyId
+ $oldTrustHash=(Get-FileHash -LiteralPath (Join-Path $cache 'issuer-public.pem')).Hash
+ $rejected=$false
+ try{& $prepareActivation @activationSettings -InstallerCache}catch{
+  if($_.Exception.Message -ne 'Activation setup settings have changed.'){throw}
+  $rejected=$true
+ }
+ if(-not $rejected -or (Get-FileHash -LiteralPath (Join-Path $cache 'issuer-public.pem')).Hash -ne $oldTrustHash){throw 'An ordinary resume must not replace pinned issuer trust.'}
+ & $prepareActivation @activationSettings -InstallerCache -ReplaceUnactivatedIssuer
+ $nextTrustHash=(Get-FileHash -LiteralPath $activationSettings.IssuerPublicKey).Hash
+ $savedCache=Get-Content -LiteralPath (Join-Path $cache 'setup.private.json') -Raw | ConvertFrom-Json
+ if([IO.File]::ReadAllText($cacheIdentity) -cne $identity -or
+    (Get-FileHash -LiteralPath (Join-Path $cache 'issuer-public.pem')).Hash -ne $nextTrustHash -or
+    $savedCache.Environment.LEE_T_ISSUER_KEY_ID -cne $publisher.keyId){throw 'Unactivated issuer replacement did not preserve identity and update matching public trust.'}
+ # Reopening setup extracts a fresh bootstrap; only the protected cache survives.
+ Remove-Item -LiteralPath $bootstrap -Recurse -Force
+ foreach($folder in @('desktop','runtime','app\scripts')){
+  New-Item -ItemType Directory -Path (Join-Path $bootstrap $folder) -Force | Out-Null
+ }
+ foreach($file in @('desktop\LeeT.Warehouse.exe','runtime\node.exe','app\scripts\desktop-activation.mjs')){
+  Copy-Item -LiteralPath (Join-Path $activationPayload $file) -Destination (Join-Path $bootstrap $file)
+ }
+ & $prepareActivation @activationSettings -InstallerCache
+ # Never rotate a cache containing a license, even when the replacement flag is set.
+ $cachedLicense=Join-Path $cache 'license.json'
+ [IO.File]::WriteAllText($cachedLicense,'protected-license-placeholder')
+ $cachedAcl=Get-Acl -LiteralPath $cachedLicense
+ $cachedAcl.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))
+ Set-Acl -LiteralPath $cachedLicense -AclObject $cachedAcl
+ $activationSettings.IssuerPublicKey=Join-Path $activationRoot 'issuer.pem'
+ $activationSettings.IssuerKeyId='desktop-ui-test'
+ $rejected=$false
+ try{& $prepareActivation @activationSettings -InstallerCache -ReplaceUnactivatedIssuer}catch{
+  if($_.Exception.Message -ne 'Activated installations cannot replace their issuer trust.'){throw}
+  $rejected=$true
+ }
+ if(-not $rejected -or [IO.File]::ReadAllText($cachedLicense) -cne 'protected-license-placeholder' -or
+    [IO.File]::ReadAllText($cacheIdentity) -cne $identity -or
+    (Get-FileHash -LiteralPath (Join-Path $cache 'issuer-public.pem')).Hash -ne $nextTrustHash){throw 'Existing licenses and their issuer trust were not preserved.'}
+ Remove-Item -LiteralPath $bootstrap -Recurse -Force
+ Write-Output 'Publisher replacement: explicit unactivated-only rollover preserves identity, resumes safely and refuses existing licenses.'
  $activationExe=Join-Path $activationPayload 'desktop\LeeT.Warehouse.exe'
  $activationEntry=Start-Process -FilePath $activationExe -ArgumentList '--activate' -PassThru
  [void]$activationEntry.Handle

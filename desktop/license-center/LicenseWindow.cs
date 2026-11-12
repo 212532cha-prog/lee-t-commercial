@@ -67,6 +67,7 @@ internal sealed class LicenseWindow : Window
         var connect = ActionButton(connection, "Connect to local issuer", "连接本机签发服务", "Sambung kepada pengeluar tempatan");
         connect.Click += async (_, _) => await Run(async () =>
         {
+            await InstalledRuntime.EnsureReady(root);
             var pending = new IssuerClient(root, password.Password);
             password.Clear();
             JsonElement rows;
@@ -164,7 +165,7 @@ internal sealed class LicenseWindow : Window
             UpdateProgress();
             Tell("Ready.", "已就绪。", "Sedia.");
         };
-        Tell("Start the local License Center service, then connect.", "请启动本机 License Center 服务后连接。", "Mulakan perkhidmatan License Center tempatan, kemudian sambung.");
+        Tell("Enter your issuer password to connect. Local services start automatically.", "输入签发员密码即可连接。本机服务会自动启动。", "Masukkan kata laluan pengeluar. Perkhidmatan tempatan bermula secara automatik.");
         UpdateProgress();
     }
 
@@ -264,6 +265,12 @@ internal sealed class LicenseWindow : Window
         catch (IssuerException error)
         {
             Tell("Request declined · " + error.Message, "请求被拒绝 · " + error.Message, "Permintaan ditolak · " + error.Message);
+        }
+        catch (System.Net.Http.HttpRequestException)
+        {
+            Tell("Could not connect securely. Run the License Center installer to repair services or certificates. Your signing keys will be preserved.",
+                "无法安全连接。请重新运行 License Center 安装器修复服务或证书；签发密钥会保留。",
+                "Sambungan selamat gagal. Jalankan pemasang untuk membaiki perkhidmatan atau sijil. Kunci dikekalkan.");
         }
         catch
         {
