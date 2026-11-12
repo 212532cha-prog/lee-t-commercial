@@ -84,6 +84,12 @@ try{
  Uninstall-Issuer $true
  if((Test-Path $root) -or (Get-Service LeeTLicenseCenter,LeeTLicensePostgreSQL17 -ErrorAction SilentlyContinue)){throw 'Full uninstall retained issuer data or services.'}
  Write-Output 'PASS: standalone installer, TLS login, wrong-password rejection, paid signing, independent signature, cold service start, crash recovery, repair, preserved-data reinstall and full removal.'
+}catch{
+ # These logs contain setup status and generic backend error stages, never private configuration.
+ $serviceLog=Join-Path $root 'license-center-service.log'
+ if(Test-Path -LiteralPath $serviceLog){Get-Content -LiteralPath $serviceLog -Tail 80 | Write-Output}
+ Get-ChildItem -LiteralPath $fixture -Filter 'setup-*.log' | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object {Get-Content -LiteralPath $_.FullName -Tail 100 | Write-Output}
+ throw
 }finally{
  if(Test-Path (Join-Path $install 'unins000.exe')){Uninstall-Issuer $true}
  if(Test-Path $fixture){Remove-Item $fixture -Recurse -Force}
