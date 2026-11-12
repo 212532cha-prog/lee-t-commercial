@@ -305,7 +305,7 @@ public final class PinnedWorkspace {
             String path = uri.getPath();
             if (path.startsWith("/api/")) {
                 byte[] photo = transport.readPhoto(path + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery()));
-                if (photo != null && photo.length > 0) return new WebResourceResponse(path.endsWith("/qr") ? "image/svg+xml" : photo[0] == (byte) 0x89 ? "image/png" : "image/jpeg", null, new ByteArrayInputStream(photo));
+                if (photo != null && photo.length > 0) return new WebResourceResponse(path.endsWith("/qr") ? "image/svg+xml" : photo[0] == (byte) 0x89 ? "image/png" : "image/jpeg", null, 200, "OK", Collections.singletonMap("Cache-Control", "no-store"), new ByteArrayInputStream(photo));
             } else {
                 String name = "/".equals(path) ? "index.html" : path.substring(1);
                 if (name.matches("(?:[a-z-]+\\.js|index\\.html|app\\.css|vendor/jsqr\\.js|fonts/business-regular\\.woff2|brand/lee-t-logo\\.jpg)")) {

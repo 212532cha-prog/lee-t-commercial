@@ -78,7 +78,12 @@ public class WarehouseFlowTest {
         waitFor("!!document.querySelector('.workspace') && !!document.querySelector('.main-panel h2')");
     }
     private void nav(String target) throws Exception {
-        click("[data-page='" + target + "']");
+        String button = ".bottom button[data-page='" + target + "']";
+        if (!"true".equals(js("!!document.querySelector(" + JSONObject.quote(button) + ")"))) {
+            if ("true".equals(js("getComputedStyle(document.querySelector('.sidebar')).display==='none'"))) click("[data-action=menu]");
+            button = ".sidebar button[data-page='" + target + "']";
+        }
+        click(button);
         waitFor("document.querySelector('.app-layout')?.dataset.page===" + JSONObject.quote(target));
         waitFor("!document.querySelector('.main-panel').innerText.includes('Loading…')");
     }

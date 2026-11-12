@@ -78,9 +78,9 @@ export function mountPairingScreen({ document, storage, native, scan, request, r
     scanButton.className = 'secondary';
     resume.disabled = scanButton.disabled = busy || !native;
     administrator.disabled = administratorScan.disabled = busy || !native;
-    administrator.textContent = words.administrator;
+    administrator.textContent = words[savedAdministrator() ? 'administrator' : 'administratorConnect'];
     administratorScan.textContent = words.administratorScan;
-    administratorScan.hidden = false;
+    administratorScan.hidden = !savedAdministrator();
     offline.hidden = !savedAdministrator() || !offlineInventory;
     forget.hidden = !savedAdministrator() || !clearAdministrator;
     offline.disabled = forget.disabled = busy || !native;
