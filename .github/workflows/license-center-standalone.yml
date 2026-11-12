@@ -1,0 +1,102 @@
+name: Standalone License Center installer
+on:
+  push:
+    branches: [fix/standalone-license-center]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: warehouse_test
+          POSTGRES_PASSWORD: test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d warehouse_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      WAREHOUSE_NATIVE_PG: '1'
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: test-only
+      PGDATABASE: warehouse_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run scan:secrets
+      - run: npm test
+      - run: node scripts/test-native-runtime.mjs
+  windows:
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Parse installation scripts
+        shell: powershell
+        run: |
+          Get-ChildItem scripts/windows/*.ps1 | ForEach-Object {
+            $tokens=$null; $errors=$null
+            [void][Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors)
+            if($errors.Count){throw ($errors|Out-String)}
+          }
+      - run: npm ci --ignore-scripts
+      - name: Build self-contained issuer window
+        run: dotnet publish desktop/license-center/LeeT.LicenseCenter.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o dist/license-center
+      - name: Verify existing separate-database provisioning and real TLS signing
+        shell: powershell
+        run: |
+          ./scripts/windows/Test-CommercialPostgres.ps1
+          ./scripts/windows/Test-LocalLicenseCenter.ps1 -DesktopExecutable (Resolve-Path dist/license-center/LeeT-License-Center.exe).Path
+      - name: Stage independent runtime and build installer
+        shell: powershell
+        run: |
+          $ProgressPreference='SilentlyContinue'
+          $vc=Join-Path $env:RUNNER_TEMP 'vc_redist.x64.exe'
+          Invoke-WebRequest 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile $vc -UseBasicParsing
+          $payload=Join-Path $env:RUNNER_TEMP 'license-center-payload'
+          ./scripts/windows/Stage-LicenseCenter.ps1 -DesktopDirectory (Resolve-Path dist/license-center).Path -PostgresDirectory (Join-Path $env:ProgramFiles 'PostgreSQL\17') -OutputDirectory $payload -VcRedistPath $vc
+          $compiler=Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if(-not (Test-Path $compiler)){
+            choco install innosetup -y --no-progress
+            if($LASTEXITCODE -ne 0){throw 'Could not install the setup compiler.'}
+          }
+          $output=Join-Path $env:RUNNER_TEMP 'license-center-setup'
+          & $compiler "/DPayloadDir=$payload" "/DBuildOutput=$output" installer/windows/LeeT-LicenseCenter-Setup.iss
+          if($LASTEXITCODE -ne 0){throw 'Standalone installer build failed.'}
+      - name: Install, recover, repair, reinstall and fully uninstall the actual EXE
+        shell: powershell
+        run: |
+          ./scripts/windows/Test-LicenseCenterInstaller.ps1 -SetupExecutable (Join-Path $env:RUNNER_TEMP 'license-center-setup\LEE-T-License-Center-Setup.exe')
+      - name: Hash verified installer
+        shell: powershell
+        run: |
+          $setup=Join-Path $env:RUNNER_TEMP 'license-center-setup\LEE-T-License-Center-Setup.exe'
+          $hash=(Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText(($setup+'.sha256'),($hash+'  LEE-T-License-Center-Setup.exe'+"`n"),[Text.UTF8Encoding]::new($false))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LEE-T-License-Center-Standalone-Windows
+          path: ${{ runner.temp }}/license-center-setup/*
+          if-no-files-found: error
+      - name: Preserve failure diagnostics without secrets
+        if: failure()
+        shell: powershell
+        run: |
+          $log=Join-Path $env:ProgramData 'Lee T License Center\license-center-service.log'
+          if(Test-Path $log){Get-Content $log -Tail 80}

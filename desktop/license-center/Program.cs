@@ -32,6 +32,7 @@ internal static class Program
 
     private static async Task RunTest(string root, string passwordFile, string requestFile, string outputFile)
     {
+        await InstalledRuntime.EnsureReady(root);
         var password = File.ReadAllText(passwordFile);
         using var client = new IssuerClient(root, password);
         using var wrong = new IssuerClient(root, password + "x");
