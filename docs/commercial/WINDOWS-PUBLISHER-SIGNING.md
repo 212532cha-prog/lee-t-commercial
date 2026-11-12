@@ -34,7 +34,7 @@ Signing uses SHA256 and RFC 3161/SHA256 timestamping. Nonzero SignTool exit code
 
 ## Acceptance
 
-The existing repository, desktop, activation, native service and installer lifecycle gates remain enabled. Additional native Windows tests create an isolated test certificate and require:
+The existing repository, desktop, activation, native service and installer lifecycle gates remain enabled. Additional native Windows tests create an isolated test certificate, temporarily trust its public certificate in the disposable runner’s machine root store (avoiding current-user consent dialogs), and remove that exact certificate afterward. They require:
 
 - production rejection of self-signed certificates and missing timestamps;
 - test-mode rejection outside disposable CI;

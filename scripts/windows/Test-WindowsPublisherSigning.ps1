@@ -16,15 +16,19 @@ $fixture=Join-Path $root 'publisher-fixture.exe'
 $subject='CN=LEE T CI TEST ONLY '+[guid]::NewGuid().ToString('N').Substring(0,8)
 $priorCi=$env:GITHUB_ACTIONS
 try{
+ Write-Host 'Publisher acceptance: create isolated CI code-signing identity.'
  $certificate=New-SelfSignedCertificate -Type CodeSigningCert -Subject $subject -CertStoreLocation Cert:\CurrentUser\My -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddDays(2)
  $certificates+= $certificate.Thumbprint
  $public=Join-Path $root 'test-publisher.cer';[IO.File]::WriteAllBytes($public,$certificate.RawData)
- Import-Certificate -FilePath $public -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+ # CurrentUser Root can display an unattended Windows consent dialog. This elevated, disposable CI host uses its machine store and removes only this unique fixture afterward.
+ Write-Host 'Publisher acceptance: trust the public CI fixture on this disposable runner.'
+ Import-Certificate -FilePath $public -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
  $trusted+=$certificate.Thumbprint
  $source=Join-Path $root 'fixture.cs'
  [IO.File]::WriteAllText($source,'class PublisherFixture { static int Main() { return 0; } }')
  & (Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe') /nologo /target:exe ("/out:"+$fixture) $source
  if($LASTEXITCODE -ne 0){throw 'Could not compile the native publisher fixture.'}
+ Write-Host 'Publisher acceptance: verify identity, certificate purpose and production/test guards.'
  $policy=@{CertificateThumbprint=$certificate.Thumbprint;ExpectedSubject=$certificate.Subject;TimestampUrl='http://timestamp.digicert.com'}
  $originalHash=(Get-FileHash -LiteralPath $fixture).Hash
  $rejected=$false
@@ -44,9 +48,11 @@ try{
  $certificates+=$tls.Thumbprint;$rejected=$false
  try{& $sign -Path $fixture -CertificateThumbprint $tls.Thumbprint -ExpectedSubject $tls.Subject -TimestampUrl $policy.TimestampUrl -TestSigning | Out-Null}catch{if($_.Exception.Message -notmatch 'code-signing certificate'){throw};$rejected=$true}
  if(-not $rejected){throw 'A TLS certificate was accepted for publisher signing.'}
+ Write-Host 'Publisher acceptance: reject a failed timestamp without changing the input.'
  $badTimestamp=$policy.Clone();$badTimestamp.TimestampUrl='http://127.0.0.1:9/';$rejected=$false
  try{& $sign -Path $fixture @badTimestamp -TestSigning -SignToolTimeoutSeconds 15 | Out-Null}catch{if($_.Exception.Message -notmatch 'timestamp|SignTool'){throw};$rejected=$true}
  if(-not $rejected -or (Get-FileHash $fixture).Hash -ne $originalHash){throw 'Timestamp failure did not retain the original file.'}
+ Write-Host 'Publisher acceptance: sign with SHA256 and a real RFC3161 timestamp.'
  & $sign -Path $fixture @policy -TestSigning | Out-Null
  & $sign -Path $fixture @policy -TestSigning -VerifyOnly | Out-Null
  $tampered=Join-Path $root 'tampered.exe';Copy-Item $fixture $tampered
@@ -54,6 +60,7 @@ try{
  $rejected=$false
  try{& $sign -Path $tampered @policy -TestSigning -VerifyOnly | Out-Null}catch{if($_.Exception.Message -notmatch 'signature validation failed'){throw};$rejected=$true}
  if(-not $rejected){throw 'A tampered publisher binary passed signature verification.'}
+ Write-Host 'Publisher acceptance: build and verify the actual signed product package.'
  $output=Join-Path $root 'ci-only-installer'
  & (Join-Path $PSScriptRoot 'Build-PublisherSignedInstaller.ps1') -Product $Product -PayloadDirectory $PayloadDirectory -OutputDirectory $output @policy -OfflineIssuerPublicKey $OfflineIssuerPublicKey -OfflineIssuerKeyId $OfflineIssuerKeyId -TestSigning | Out-Host
  $filename=if($Product -eq 'Warehouse'){'LEE-T-Warehouse-Setup.exe'}else{'LEE-T-License-Center-Setup.exe'}
@@ -64,7 +71,7 @@ try{
  Write-Output ('PASS: '+$Product+' publisher signing, SHA256/RFC3161, input preservation on failure, certificate purpose/identity/test-mode guards, tamper rejection, signed payload, installer and uninstaller.')
 }finally{
  $env:GITHUB_ACTIONS=$priorCi
- foreach($thumbprint in $trusted){Remove-Item -LiteralPath ('Cert:\CurrentUser\Root\'+$thumbprint) -ErrorAction SilentlyContinue}
+ foreach($thumbprint in $trusted){Remove-Item -LiteralPath ('Cert:\LocalMachine\Root\'+$thumbprint) -ErrorAction SilentlyContinue}
  foreach($thumbprint in $certificates){Remove-Item -LiteralPath ('Cert:\CurrentUser\My\'+$thumbprint) -DeleteKey -ErrorAction SilentlyContinue}
  if(Test-Path -LiteralPath $root){Remove-Item -LiteralPath $root -Recurse -Force}
 }
