@@ -75,3 +75,20 @@ if (existsSync(identityTest)) {
 }
 mkdirSync(workspaceAssets + '/brand', { recursive: true });
 copyFileSync('../public/brand/lee-t-logo.jpg', workspaceAssets + '/brand/lee-t-logo.jpg');
+
+// Keep all generated library instrumentation suites enabled. Older Cordova test
+// dependencies split jdk7/jdk8 classes that are already inside Kotlin >= 1.8.
+const rootGradle = 'android/build.gradle';
+const marker = '// LEE T Kotlin test dependency alignment';
+let rootBuild = readFileSync(rootGradle, 'utf8');
+if (!rootBuild.includes(marker)) {
+  rootBuild += `
+${marker}
+subprojects { child ->
+    child.plugins.withId('com.android.library') {
+        child.dependencies.add('androidTestImplementation', child.dependencies.platform('org.jetbrains.kotlin:kotlin-bom:1.8.22'))
+    }
+}
+`;
+  writeFileSync(rootGradle, rootBuild);
+}
