@@ -18,12 +18,17 @@ foreach($name in @('LeeTLicenseCenter','LeeTLicensePostgreSQL17')){
  }
 }
 if($DeleteIssuerData){
+ if(@(Get-ChildItem -LiteralPath $root -Force -Recurse | Where-Object {($_.Attributes -band [IO.FileAttributes]::ReparsePoint)}).Count){
+  throw 'Issuer data contains linked entries. Data was retained for review.'
+ }
  $caFile=Join-Path $root 'management-ca.cer'
  $operatorFile=Join-Path $root 'operator.cer'
  if(Test-Path -LiteralPath $caFile){
   $ca=[Security.Cryptography.X509Certificates.X509Certificate2]::new($caFile)
   try{
-   Get-ChildItem Cert:\CurrentUser\My | Where-Object {$_.Thumbprint -eq $ca.Thumbprint -or $_.Issuer -eq $ca.Subject} | Remove-Item
+   Get-ChildItem Cert:\CurrentUser\My | Where-Object {$_.Thumbprint -eq $ca.Thumbprint -or $_.Issuer -eq $ca.Subject} | ForEach-Object {
+    if($_.HasPrivateKey){Remove-Item -LiteralPath $_.PSPath -DeleteKey -Force}else{Remove-Item -LiteralPath $_.PSPath -Force}
+   }
    $trusted='Cert:\LocalMachine\Root\'+$ca.Thumbprint
    if(Test-Path -LiteralPath $trusted){Remove-Item -LiteralPath $trusted}
   }finally{$ca.Dispose()}
@@ -32,7 +37,9 @@ if($DeleteIssuerData){
   $operator=[Security.Cryptography.X509Certificates.X509Certificate2]::new($operatorFile)
   try{
    $certificate='Cert:\CurrentUser\My\'+$operator.Thumbprint
-   if(Test-Path -LiteralPath $certificate){Remove-Item -LiteralPath $certificate}
+   if(Test-Path -LiteralPath $certificate){
+    if((Get-Item -LiteralPath $certificate).HasPrivateKey){Remove-Item -LiteralPath $certificate -DeleteKey -Force}else{Remove-Item -LiteralPath $certificate -Force}
+   }
   }finally{$operator.Dispose()}
  }
  Remove-Item -LiteralPath $root -Recurse -Force
