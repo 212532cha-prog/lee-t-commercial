@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import { brandArtwork } from '../scripts/brand-artwork.mjs';
 
 const cli = fileURLToPath(new URL('./node_modules/@capacitor/cli/bin/capacitor', import.meta.url));
 const run = (...args) => execFileSync(process.execPath, [cli, ...args], { stdio: 'inherit' });
@@ -39,7 +40,7 @@ writeFileSync(manifestPath, workspaceManifest);
 // Keep the artwork inside Android's adaptive-icon safe area so launcher masks do not crop it.
 mkdirSync(main + '/res/drawable-nodpi', { recursive: true });
 rmSync(main + '/res/drawable-nodpi/leet_launcher.jpg', { force: true });
-const logo = '../public/brand/lee-t-logo.jpg';
+const logo = await brandArtwork('../public/brand/lee-t-logo.jpg');
 await sharp(logo).resize(176, 176, { fit: 'contain', background: '#ffffff' })
   .extend({ top: 56, bottom: 56, left: 56, right: 56, background: '#ffffff' })
   .png().toFile(main + '/res/drawable-nodpi/leet_foreground.png');

@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'mobile/**'
+      - 'scripts/brand-artwork.mjs'
       - 'public/app/**'
       - 'public/brand/**'
       - 'src/**'
@@ -16,6 +17,7 @@ on:
   pull_request:
     paths:
       - 'mobile/**'
+      - 'scripts/brand-artwork.mjs'
       - 'public/brand/**'
       - 'public/app/**'
       - 'tests/commercial-mobile*.test.mjs'

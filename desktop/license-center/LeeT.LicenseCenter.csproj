@@ -14,5 +14,8 @@
     <AssemblyName>LeeT-License-Center</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
-  <ItemGroup><Resource Include="lee-t-logo.jpg" /></ItemGroup>
+  <ItemGroup>
+    <Resource Include="lee-t-logo.jpg" />
+    <Resource Include="../../public/brand/lee-t.ico" Link="Brand/lee-t.ico" />
+  </ItemGroup>
 </Project>
