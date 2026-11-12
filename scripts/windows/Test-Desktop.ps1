@@ -129,6 +129,14 @@ try {
  if([IO.File]::ReadAllText($cacheIdentity) -cne $identity -or
     (Get-FileHash -LiteralPath (Join-Path $cache 'issuer-public.pem')).Hash -ne $nextTrustHash -or
     $savedCache.Environment.LEE_T_ISSUER_KEY_ID -cne $publisher.keyId){throw 'Unactivated issuer replacement did not preserve identity and update matching public trust.'}
+ # Reopening setup extracts a fresh bootstrap; only the protected cache survives.
+ Remove-Item -LiteralPath $bootstrap -Recurse -Force
+ foreach($folder in @('desktop','runtime','app\scripts')){
+  New-Item -ItemType Directory -Path (Join-Path $bootstrap $folder) -Force | Out-Null
+ }
+ foreach($file in @('desktop\LeeT.Warehouse.exe','runtime\node.exe','app\scripts\desktop-activation.mjs')){
+  Copy-Item -LiteralPath (Join-Path $activationPayload $file) -Destination (Join-Path $bootstrap $file)
+ }
  & $prepareActivation @activationSettings -InstallerCache
  # Never rotate a cache containing a license, even when the replacement flag is set.
  $cachedLicense=Join-Path $cache 'license.json'
