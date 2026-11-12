@@ -14,6 +14,14 @@ on:
 permissions:
   contents: read
 jobs:
+  publisher-signing-core:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify real file signing before full installation acceptance
+        shell: powershell
+        run: ./scripts/windows/Test-WindowsPublisherIdentity.ps1
   verify:
     runs-on: ubuntu-latest
     services:
@@ -46,7 +54,7 @@ jobs:
       - run: npm test
       - run: node scripts/test-native-runtime.mjs
   windows:
-    needs: verify
+    needs: [verify, publisher-signing-core]
     runs-on: windows-2022
     timeout-minutes: 45
     steps:

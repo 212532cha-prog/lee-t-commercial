@@ -93,6 +93,6 @@ try{
  if(-not $SkipTimestamp){$verify+='/tw'}
  Invoke-BoundedSignTool -Arguments ($verify+@($temporary))
  $signature=Assert-PublisherSignature $temporary
- [IO.File]::Replace($temporary,$file.FullName,$null)
+ [IO.File]::Replace($temporary,$file.FullName,[System.Management.Automation.Language.NullString]::Value)
  [pscustomobject]@{File=$file.FullName;Subject=$signature.SignerCertificate.Subject;Thumbprint=$signature.SignerCertificate.Thumbprint;Timestamped=($null -ne $signature.TimeStamperCertificate);Sha256=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
 }finally{if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force}}
