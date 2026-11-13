@@ -15,6 +15,7 @@
 #endif
 
 [Setup]
+#include "PublisherSigning.iss"
 SetupIconFile=..\..\public\brand\lee-t.ico
 #ifdef CommercialRelease
 AppId=LeeTCommercialWarehouse

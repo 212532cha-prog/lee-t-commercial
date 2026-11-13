@@ -62,7 +62,7 @@ jobs:
   setup:
     needs: management-bundle
     runs-on: windows-2022
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - name: Provision native PostgreSQL 17 for acceptance
@@ -202,6 +202,12 @@ jobs:
           $hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText((Join-Path $output 'SHA256SUMS.txt'), ($hash + '  ' + (Split-Path $setup -Leaf) + "`n"), [Text.UTF8Encoding]::new($false))
           Copy-Item 'docs/commercial/INSTALL.md' (Join-Path $output 'INSTALL.md')
+      - name: Verify publisher signing of the real Warehouse package
+        shell: powershell
+        run: |
+          $issuer = Join-Path $env:RUNNER_TEMP 'leet-commercial-publisher'
+          $publisher = Get-Content 'installer/windows/publisher.json' -Raw | ConvertFrom-Json
+          ./scripts/windows/Test-WindowsPublisherSigning.ps1 -Product Warehouse -PayloadDirectory (Join-Path $env:RUNNER_TEMP 'leet-payload') -OfflineIssuerPublicKey (Join-Path $issuer 'issuer-public.pem') -OfflineIssuerKeyId $publisher.keyId
       - uses: actions/upload-artifact@v4
         with:
           name: LEE-T-Warehouse-0.8.5-Windows
