@@ -23,12 +23,14 @@ foreach($relative in $owned){if(-not (Test-Path -LiteralPath (Join-Path $source 
 $compiler=Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
 if(-not (Test-Path -LiteralPath $compiler)){throw 'Install Inno Setup 6 before building the signed release.'}
 $temporary=$output+'.signing-'+[guid]::NewGuid().ToString('N')
+$uninstaller=Join-Path $temporary 'uninstaller'
+$proof=Join-Path $temporary 'uninstaller-proof'
 $prior=@{}
-$values=@{LEE_T_SIGN_CERTIFICATE=$CertificateThumbprint;LEE_T_SIGN_SUBJECT=$ExpectedSubject;LEE_T_SIGN_STORE=$StoreLocation;LEE_T_SIGN_TIMESTAMP=$TimestampUrl;LEE_T_SIGN_TEST=$(if($TestSigning){'1'}else{'0'})}
+$values=@{LEE_T_SIGN_UNINSTALLER_CACHE=$uninstaller;LEE_T_SIGN_UNINSTALLER_PROOF=$proof;LEE_T_SIGN_CERTIFICATE=$CertificateThumbprint;LEE_T_SIGN_SUBJECT=$ExpectedSubject;LEE_T_SIGN_STORE=$StoreLocation;LEE_T_SIGN_TIMESTAMP=$TimestampUrl;LEE_T_SIGN_TEST=$(if($TestSigning){'1'}else{'0'})}
 foreach($name in $values.Keys){$prior[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$values[$name],'Process')}
 try{
- $payload=Join-Path $temporary 'payload';$build=Join-Path $temporary 'output';$uninstaller=Join-Path $temporary 'uninstaller'
- New-Item -ItemType Directory -Path $payload,$build,$uninstaller -Force | Out-Null
+ $payload=Join-Path $temporary 'payload';$build=Join-Path $temporary 'output'
+ New-Item -ItemType Directory -Path $payload,$build,$uninstaller,$proof -Force | Out-Null
  Get-ChildItem -LiteralPath $source -Force | Copy-Item -Destination $payload -Recurse -Force
  $sign=Join-Path $PSScriptRoot 'Sign-WindowsPublisherFile.ps1'
  $records=@()
@@ -38,7 +40,7 @@ try{
  }
  $optional=if($Product -eq 'LicenseCenter'){'LeeT-License-Center.dll'}else{$null}
  if($optional -and (Test-Path (Join-Path $payload $optional))){$record=& $sign -Path (Join-Path $payload $optional);$records+=@{path=$optional;sha256=$record.Sha256;subject=$record.Subject;thumbprint=$record.Thumbprint;timestamped=$record.Timestamped}}
- $command='$q'+(Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe')+'$q -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $q'+$sign+'$q -Path $f'
+ $command='$q'+(Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe')+'$q -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $q'+(Join-Path $PSScriptRoot 'Sign-InnoPublisherFile.ps1')+'$q -Path $f'
  $arguments=@("/DPayloadDir=$payload","/DBuildOutput=$build",'/DPublisherSigning=1',"/DPublisherUninstallerDir=$uninstaller",('/Sleetpublisher='+$command))
  if($Product -eq 'Warehouse'){
   if(-not $OfflineIssuerPublicKey -or -not $OfflineIssuerKeyId){throw 'The existing offline issuer public key and ID are required for Warehouse.'}
@@ -53,7 +55,7 @@ try{
  $setup=Join-Path $build $filename
  $record=& $sign -Path $setup -VerifyOnly
  $records+=@{path=$filename;sha256=$record.Sha256;subject=$record.Subject;thumbprint=$record.Thumbprint;timestamped=$record.Timestamped}
- $cached=@(Get-ChildItem -LiteralPath $uninstaller -Filter '*.e32' -Recurse)
+ $cached=@(Get-ChildItem -LiteralPath $proof -Filter '*.exe' -Recurse)
  if($cached.Count -eq 0){throw 'No signed uninstaller was generated.'}
  foreach($file in $cached){$record=& $sign -Path $file.FullName -VerifyOnly;$records+=@{path=('uninstaller/'+$file.Name);sha256=$record.Sha256;subject=$record.Subject;thumbprint=$record.Thumbprint;timestamped=$record.Timestamped}}
  & (Join-Path $PSScriptRoot 'Test-PackageBranding.ps1') -SetupExecutable $setup -ProductName $name -ExpectedVersion $version | Out-Host
